@@ -69,7 +69,7 @@ export default function PriceSummary({ formData }: any) {
 📍 住所：${formData.address}
 
 キャンセルはこちら👇
-https://shampoo-reservation-app.vercel.app/cancel?id=${reservationId}
+https://duunxgczghqokbcgswrk.supabase.co/functions/v1/cancel-reservation?id=${reservationId}
 `,
             }),
         })
