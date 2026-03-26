@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import StepForm from '../components/StepForm'
+import LiffInit from '../components/LiffInit'
 
 export type FormData = {
     maker: string
@@ -11,6 +12,7 @@ export type FormData = {
     date: string
     time: string
     address: string
+    isManualCar: boolean
 }
 
 export default function ReservePage() {
@@ -24,10 +26,13 @@ export default function ReservePage() {
         date: '',
         time: '',
         address: '',
+        isManualCar: false,
     })
 
     return (
         <div className="p-4 max-w-md mx-auto">
+            <LiffInit />
+
             <StepForm
                 step={step}
                 setStep={setStep}

@@ -1,9 +1,13 @@
 "use client"
 
 import { supabase } from "../lib/supabase"
-import liff from "@line/liff"
 
-export default function PriceSummary({ formData }: any) {
+export default function PriceSummary({
+    formData,
+    mode = "create",
+    reservationId,
+    targetUserId,
+}: any) {
     const basePrice =
         formData.size === "S"
             ? 3000
@@ -17,13 +21,17 @@ export default function PriceSummary({ formData }: any) {
 
     const handleReserve = async () => {
         const profile = JSON.parse(localStorage.getItem("user") || "{}")
+        const lineUserId = profile.userId || targetUserId
 
-        // ① 予約保存（明示的に指定🔥）
-        const { data, error } = await supabase
-            .from("reservations")
-            .insert([
-                {
-                    user_id: profile.userId,
+        let currentReservationId = reservationId
+        if (mode === "update") {
+            if (!reservationId) {
+                alert("予約IDが見つかりません")
+                return
+            }
+            const { error } = await supabase
+                .from("reservations")
+                .update({
                     maker: formData.maker,
                     model: formData.model,
                     size: formData.size,
@@ -31,50 +39,102 @@ export default function PriceSummary({ formData }: any) {
                     time: formData.time,
                     address: formData.address,
                     interior: formData.interior,
-                },
-            ])
-            .select()
-            .single()
+                })
+                .eq("id", reservationId)
 
-        const reservationId = data.id
+            if (error) {
+                console.error("更新エラー:", error)
+                alert("更新失敗")
+                return
+            }
+        } else {
+            const { data, error } = await supabase
+                .from("reservations")
+                .insert([
+                    {
+                        user_id: lineUserId,
+                        maker: formData.maker,
+                        model: formData.model,
+                        size: formData.size,
+                        date: formData.date,
+                        time: formData.time,
+                        address: formData.address,
+                        interior: formData.interior,
+                    },
+                ])
+                .select()
+                .single()
 
-        if (error) {
-            console.error("予約エラー:", error)
-            alert("予約失敗: " + error.message)
-            return
+            if (error || !data) {
+                console.error("予約エラー:", error)
+                alert("予約失敗")
+                return
+            }
+            currentReservationId = data.id
         }
 
-        // ② 車種追加
-        await supabase.from("cars").upsert([
-            {
-                maker: formData.maker,
-                model: formData.model,
-                size: formData.size,
-                is_manual: true,
-            },
-        ])
+        // ② 手入力の車種だけ cars に追加
+        if (formData.isManualCar && formData.maker && formData.model) {
+            await supabase.from("cars").upsert(
+                [
+                    {
+                        maker: formData.maker,
+                        model: formData.model,
+                        size: formData.size,
+                        is_manual: true,
+                    },
+                ],
+                { onConflict: "maker,model" }
+            )
+        }
+
+        // ✅ キャンセルURL（これが正解）
+        const cancelUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/cancel-reservation?id=${currentReservationId}`
+        const editUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/edit-reservation?id=${currentReservationId}`
 
         // ③ LINE送信
-        await fetch("/api/send-line", {
+        console.log("🔥 send-line 呼び出し前")
+
+        const res = await fetch("/api/send-line", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                userId: profile.userId,
-                message: `予約完了🚗✨
+                userId: lineUserId,
+                message:
+                    mode === "update"
+                        ? `予約内容を変更しました🛠️
 
 📅 日時：${formData.date} ${formData.time}
 🚙 車種：${formData.maker} ${formData.model}
 📍 住所：${formData.address}
 
+変更はこちら👇
+${editUrl}
+
 キャンセルはこちら👇
-https://duunxgczghqokbcgswrk.supabase.co/functions/v1/cancel-reservation?id=${reservationId}
+${cancelUrl}
+`
+                        : `予約完了🚗✨
+
+📅 日時：${formData.date} ${formData.time}
+🚙 車種：${formData.maker} ${formData.model}
+📍 住所：${formData.address}
+
+変更はこちら👇
+${editUrl}
+
+キャンセルはこちら👇
+${cancelUrl}
 `,
             }),
         })
 
-        alert("予約完了！")
+        const result = await res.json()
+        console.log("📡 API結果:", result)
+
+        alert(mode === "update" ? "予約を変更しました！" : "予約完了！")
     }
 
     return (
@@ -94,7 +154,7 @@ https://duunxgczghqokbcgswrk.supabase.co/functions/v1/cancel-reservation?id=${re
                 onClick={handleReserve}
                 className="bg-green-500 text-white px-4 py-2 w-full mt-4"
             >
-                予約する
+                {mode === "update" ? "変更を確定する" : "予約する"}
             </button>
         </div>
     )

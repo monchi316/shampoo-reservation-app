@@ -10,6 +10,9 @@ export default function StepForm({
     setStep,
     formData,
     setFormData,
+    mode = "create",
+    reservationId,
+    targetUserId,
 }: any) {
     return (
         <div>
@@ -40,6 +43,9 @@ export default function StepForm({
             {step === 4 && (
                 <PriceSummary
                     formData={formData}
+                    mode={mode}
+                    reservationId={reservationId}
+                    targetUserId={targetUserId}
                 />
             )}
         </div>

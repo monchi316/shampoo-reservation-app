@@ -29,7 +29,7 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
 
     // 🔽 入力で絞り込み
     const handleMakerChange = (value: string) => {
-        setFormData({ ...formData, maker: value })
+        setFormData({ ...formData, maker: value, isManualCar: true })
 
         const inputValue = toKatakana(value.toLowerCase())
 
@@ -44,7 +44,7 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
     }
 
     const handleModelChange = (value: string) => {
-        setFormData({ ...formData, model: value })
+        setFormData({ ...formData, model: value, isManualCar: true })
 
         const filtered = cars.filter((car) => {
             const matchMaker = formData.maker
@@ -69,6 +69,7 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
             maker: car.maker,
             model: car.model,
             size: car.size,
+            isManualCar: false,
         })
         setSuggestions([])
     }
@@ -89,7 +90,7 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
                         <li
                             key={i}
                             onClick={() => {
-                                setFormData({ ...formData, maker })
+                                setFormData({ ...formData, maker, isManualCar: true })
                                 setMakerSuggestions([])
                             }}
                         >
