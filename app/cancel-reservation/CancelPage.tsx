@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 export default function CancelPage() {
     const searchParams = useSearchParams()
     const id = searchParams.get('id')
+    const groupId = searchParams.get('groupId')
     const router = useRouter()
 
     const [status, setStatus] = useState<'confirm' | 'loading' | 'done' | 'error'>('confirm')
@@ -16,10 +17,15 @@ export default function CancelPage() {
 
         setStatus('loading')
 
+        // Soft-cancel reservation by status update.
         const { error } = await supabase
             .from('reservations')
             .update({ status: 'cancelled' })
-            .eq('id', id)
+            .or(
+                groupId
+                    ? `group_id.eq.${groupId}`
+                    : `id.eq.${id}`
+            )
 
         if (error) {
             console.error(error)
@@ -31,14 +37,12 @@ export default function CancelPage() {
 
     const handleChange = () => {
         if (!id) return
-
-        // 予約変更でもキャンセル扱いにするならここで更新
-        supabase
-            .from('reservations')
-            .update({ status: 'cancelled' })
-            .eq('id', id)
-
-        router.push('/')
+        // Jump to edit page with the same reservation id.
+        router.push(
+            groupId
+                ? `/edit-reservation?id=${id}&groupId=${groupId}`
+                : `/edit-reservation?id=${id}`
+        )
     }
 
     if (!id) {
