@@ -15,12 +15,12 @@ export default function PriceSummary({
     )
 
     const getBasePrice = (size: string) =>
-        size === "S" ? 3000 : size === "M" ? 5000 : size === "L" ? 7000 : 0
+        size === "S" ? 8000 : size === "M" ? 9000 : size === "L" ? 10000 : 0
 
     // 複数台予約の合計金額
     const total = cars.reduce((sum: number, car: any) => {
         const base = getBasePrice(car.size)
-        return sum + (formData.interior ? base + 2000 : base)
+        return sum + (formData.interior ? base + 3000 : base)
     }, 0)
 
     const handleReserve = async () => {
@@ -293,8 +293,8 @@ ${cancelUrl}
                 {formData.addressType === "home"
                     ? "自宅"
                     : formData.addressType === "work"
-                      ? "職場"
-                      : "その他"}
+                        ? "職場"
+                        : "その他"}
             </p>
             <p className="mt-2 text-lg font-bold text-indigo-700">料金: ¥{total.toLocaleString()}</p>
 
