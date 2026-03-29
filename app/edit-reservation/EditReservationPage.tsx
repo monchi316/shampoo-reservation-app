@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import StepForm from "../components/StepForm"
-import { supabase } from "../lib/supabase"
+import TenantLogo from "../components/TenantLogo"
 
 type FormData = {
     cars: Array<{
@@ -55,46 +55,33 @@ export default function EditReservationPage() {
                 setLoading(false)
                 return
             }
-            // groupId があればグループ全体、無ければ id 単体を取得。
+            // groupId があればグループ全体、無ければ id（RLS 回避のため API 経由）
             let firstRow: any = null
             let rows: any[] = []
             if (groupIdParam) {
-                const { data, error } = await supabase
-                    .from("reservations")
-                    .select("*")
-                    .eq("group_id", groupIdParam)
-                    .order("id", { ascending: true })
-                if (error || !data || data.length === 0) {
-                    console.error("予約取得エラー:", error)
+                const res = await fetch(
+                    `/api/public/reservations?groupId=${encodeURIComponent(groupIdParam)}`
+                )
+                const json = await res.json().catch(() => ({}))
+                if (!res.ok || !Array.isArray(json.data) || json.data.length === 0) {
+                    console.error("予約取得エラー:", json)
                     setLoading(false)
                     return
                 }
-                rows = data
-                firstRow = data[0]
+                rows = json.data
+                firstRow = json.data[0]
             } else {
-                const { data, error } = await supabase
-                    .from("reservations")
-                    .select("*")
-                    .eq("id", reservationId)
-                    .single()
-
-                if (error || !data) {
-                    console.error("予約取得エラー:", error)
+                const res = await fetch(
+                    `/api/public/reservations?id=${encodeURIComponent(reservationId!)}`
+                )
+                const json = await res.json().catch(() => ({}))
+                if (!res.ok || !Array.isArray(json.data) || json.data.length === 0) {
+                    console.error("予約取得エラー:", json)
                     setLoading(false)
                     return
                 }
-                firstRow = data
-
-                if (data.group_id) {
-                    const { data: groupedRows } = await supabase
-                        .from("reservations")
-                        .select("*")
-                        .eq("group_id", data.group_id)
-                        .order("id", { ascending: true })
-                    rows = groupedRows || [data]
-                } else {
-                    rows = [data]
-                }
+                rows = json.data
+                firstRow = json.data[0]
             }
 
             setTargetUserId(firstRow.user_id || "")
@@ -161,7 +148,10 @@ export default function EditReservationPage() {
 
     return (
         <div className="p-4 max-w-md mx-auto">
-            <h1 className="text-xl font-bold mb-4">予約変更フォーム</h1>
+            <div className="mb-4 flex items-start gap-3">
+                <TenantLogo className="h-12 w-12 shrink-0" />
+                <h1 className="text-xl font-bold">予約変更フォーム</h1>
+            </div>
             {/* StepFormを更新モードで再利用する。 */}
             <StepForm
                 step={step}

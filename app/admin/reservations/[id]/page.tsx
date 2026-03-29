@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { menusToPriceMap, priceForOneCar } from "@/app/lib/menuPricing"
+import { googleMapsNavigationUrl, RESERVATION_STATUS_OPTIONS } from "../../lib/reservationStatus"
 
 type Reservation = {
     id: string
@@ -21,22 +23,6 @@ type Reservation = {
     memo?: string | null
     staff_name?: string | null
     interior?: boolean | null
-}
-
-function calcDefaultSalesForRows(targetRows: Reservation[]) {
-    const getBase = (size?: string | null) =>
-        size === "S" ? 3000 : size === "M" ? 5000 : size === "L" ? 7000 : 0
-    return targetRows.reduce((sum, r) => {
-        const base = getBase(r.size)
-        return sum + (r.interior ? base + 2000 : base)
-    }, 0)
-}
-
-/** 1台分の基本売上（DBにあればその値、なければサイズ・内装から算出） */
-function lineSalesForRow(row: Reservation): number {
-    const hasSaved = row.sales_amount !== null && row.sales_amount !== undefined
-    if (hasSaved) return Number(row.sales_amount)
-    return calcDefaultSalesForRows([row])
 }
 
 export default function AdminReservationDetailPage() {
@@ -59,6 +45,31 @@ export default function AdminReservationDetailPage() {
     /** DB未保存で予約データから補完した値（視認性の高い文字色＋軽いハイライト） */
     const [serviceDoneAtIsSuggested, setServiceDoneAtIsSuggested] = useState(false)
     const [salesAmountIsSuggested, setSalesAmountIsSuggested] = useState(false)
+    const [menuPrices, setMenuPrices] = useState<Record<string, number>>({
+        size_s: 8000,
+        size_m: 9000,
+        size_l: 10000,
+        interior_addon: 3000,
+    })
+
+    useEffect(() => {
+        fetch("/api/public/tenant-config")
+            .then((r) => r.json())
+            .then((j) => {
+                const m = menusToPriceMap(j?.menus || [])
+                if (Object.keys(m).length > 0) setMenuPrices(m)
+            })
+            .catch(() => {})
+    }, [])
+
+    const calcDefaultSalesForRows = (targetRows: Reservation[]) =>
+        targetRows.reduce((sum, r) => sum + priceForOneCar(r.size, !!r.interior, menuPrices), 0)
+
+    const lineSalesForRow = (row: Reservation): number => {
+        const hasSaved = row.sales_amount !== null && row.sales_amount !== undefined
+        if (hasSaved) return Number(row.sales_amount)
+        return priceForOneCar(row.size, !!row.interior, menuPrices)
+    }
 
     /** フォーム表示の基準にしている「一覧順で最初の選択車」が変わったときだけ hydrate する */
     const formAnchorRowIdRef = useRef<string | null>(null)
@@ -116,7 +127,7 @@ export default function AdminReservationDetailPage() {
         const sum = sel.reduce((acc, r) => acc + lineSalesForRow(r), 0)
         setSalesAmount(sum > 0 ? String(sum) : "")
         setSalesAmountIsSuggested(sel.some((r) => r.sales_amount == null || r.sales_amount === undefined))
-    }, [loading, rows, applyGroup, selectedRowIds])
+    }, [loading, rows, applyGroup, selectedRowIds, menuPrices])
 
     const fetchDetail = async () => {
         setLoading(true)
@@ -162,9 +173,10 @@ export default function AdminReservationDetailPage() {
         hydrateFromRow(first)
     }, [selectedRowIds, applyGroup, rows, loading, hydrateFromRow])
 
-    const mapUrl = useMemo(() => {
-        const address = base?.address || ""
-        return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+    const mapNavUrl = useMemo(() => {
+        const address = (base?.address || "").trim()
+        if (!address) return ""
+        return googleMapsNavigationUrl(address)
     }, [base?.address])
 
     const toggleRowSelected = (rowId: string) => {
@@ -269,15 +281,19 @@ export default function AdminReservationDetailPage() {
                     <p className="mt-2 text-sm font-medium text-slate-800">日時</p>
                     <p className="font-medium text-slate-900">{base.date} {base.time}</p>
                     <p className="mt-2 text-sm font-medium text-slate-800">住所</p>
-                    <p className="font-medium text-slate-900">{base.address}</p>
-                    <a
-                        href={mapUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-block text-sm font-semibold text-indigo-700 hover:underline"
-                    >
-                        Googleマップでナビ開始
-                    </a>
+                    <p className="font-medium text-slate-900">{base.address || "—"}</p>
+                    {mapNavUrl ? (
+                        <a
+                            href={mapNavUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 inline-block text-sm font-semibold text-indigo-700 hover:underline"
+                        >
+                            Googleマップでナビ開始
+                        </a>
+                    ) : (
+                        <p className="mt-2 text-sm text-slate-600">住所がないためナビを開けません</p>
+                    )}
                 </div>
 
                 <div className="mb-4 rounded-xl border border-slate-200 p-4">
@@ -371,9 +387,11 @@ export default function AdminReservationDetailPage() {
                                 onChange={(e) => setNextStatus(e.target.value)}
                                 className="rounded-lg border border-slate-300 bg-white p-2.5 text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                             >
-                                <option value="confirmed">confirmed</option>
-                                <option value="done">done</option>
-                                <option value="cancelled">cancelled</option>
+                                {RESERVATION_STATUS_OPTIONS.map((o) => (
+                                    <option key={o.value} value={o.value}>
+                                        {o.label}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <label className="inline-flex cursor-pointer items-center gap-2 pb-2.5 text-sm font-medium text-slate-900">

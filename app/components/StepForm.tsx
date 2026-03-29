@@ -65,6 +65,9 @@ export default function StepForm({
                     setStep={setStep}
                     formData={formData}
                     setFormData={setFormData}
+                    mode={mode}
+                    reservationId={reservationId}
+                    excludeGroupId={targetGroupId}
                 />
             )}
 

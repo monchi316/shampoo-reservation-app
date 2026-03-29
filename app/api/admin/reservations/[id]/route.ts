@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
 
 const supabase = createClient(
     process.env.SUPABASE_URL!,
@@ -17,6 +18,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
         .from("reservations")
         .select("*")
         .eq("id", id)
+        .eq("tenant_id", DEFAULT_TENANT_ID)
         .single()
 
     if (error || !data) {
@@ -29,6 +31,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
             .from("reservations")
             .select("*")
             .eq("group_id", data.group_id)
+            .eq("tenant_id", DEFAULT_TENANT_ID)
             .order("id", { ascending: true })
         grouped = groupRows || [data]
     }
@@ -102,6 +105,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         .from("reservations")
         .select("id, group_id")
         .eq("id", id)
+        .eq("tenant_id", DEFAULT_TENANT_ID)
         .single()
 
     if (baseErr || !baseRow) {
@@ -145,6 +149,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
             .select("id")
             .in("id", targetIds)
             .eq("group_id", baseRow.group_id)
+            .eq("tenant_id", DEFAULT_TENANT_ID)
 
         if (vErr || !validRows || validRows.length !== targetIds.length) {
             return NextResponse.json(
@@ -159,7 +164,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
                 ...baseUpdatePayload,
                 sales_amount: byId[tid],
             }
-            const { error } = await supabase.from("reservations").update(rowPayload).eq("id", tid)
+            const { error } = await supabase
+                .from("reservations")
+                .update(rowPayload)
+                .eq("id", tid)
+                .eq("tenant_id", DEFAULT_TENANT_ID)
             if (error) {
                 return NextResponse.json({ error: error.message }, { status: 500 })
             }
@@ -167,7 +176,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         return NextResponse.json({ ok: true })
     }
 
-    let query = supabase.from("reservations").update(updatePayload)
+    let query = supabase.from("reservations").update(updatePayload).eq("tenant_id", DEFAULT_TENANT_ID)
 
     if (applyGroup && baseRow.group_id) {
         query = query.eq("group_id", baseRow.group_id)
@@ -188,6 +197,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
                 .select("id")
                 .in("id", targetIds)
                 .eq("group_id", baseRow.group_id)
+                .eq("tenant_id", DEFAULT_TENANT_ID)
 
             if (vErr || !validRows || validRows.length !== targetIds.length) {
                 return NextResponse.json(

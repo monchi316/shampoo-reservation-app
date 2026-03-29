@@ -1,8 +1,7 @@
-'use client'
+"use client"
 
-import { useState } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { supabase } from '../lib/supabase'
+import { useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 
 export default function CancelPage() {
     const searchParams = useSearchParams()
@@ -15,24 +14,19 @@ export default function CancelPage() {
     const handleCancel = async () => {
         if (!id) return
 
-        setStatus('loading')
+        setStatus("loading")
 
-        // Soft-cancel reservation by status update.
-        const { error } = await supabase
-            .from('reservations')
-            .update({ status: 'cancelled' })
-            .or(
-                groupId
-                    ? `group_id.eq.${groupId}`
-                    : `id.eq.${id}`
-            )
+        const url = new URL("/api/cancel-reservation", window.location.origin)
+        url.searchParams.set("id", id)
+        if (groupId) url.searchParams.set("groupId", groupId)
 
-        if (error) {
-            console.error(error)
-            setStatus('error')
-        } else {
-            setStatus('done')
+        const res = await fetch(url.toString())
+        if (!res.ok) {
+            console.error(await res.json().catch(() => ({})))
+            setStatus("error")
+            return
         }
+        setStatus("done")
     }
 
     const handleChange = () => {

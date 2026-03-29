@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import StepForm from '../components/StepForm'
 import LiffInit from '../components/LiffInit'
+import TenantLogo from '../components/TenantLogo'
 
 export type CarForm = {
     maker: string
@@ -112,12 +113,17 @@ export default function ReservePage() {
             <LiffInit />
 
             <div className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h1 className="mb-2 text-2xl font-bold tracking-tight text-slate-900">
-                    洗車予約フォーム
-                </h1>
-                <p className="mb-6 text-sm text-slate-600">
-                    必要事項を入力して、最後に予約内容を確定してください。
-                </p>
+                <div className="mb-6 flex items-start gap-4">
+                    <TenantLogo className="h-14 w-14 shrink-0" />
+                    <div>
+                        <h1 className="mb-2 text-2xl font-bold tracking-tight text-slate-900">
+                            洗車予約フォーム
+                        </h1>
+                        <p className="text-sm text-slate-600">
+                            必要事項を入力して、最後に予約内容を確定してください。
+                        </p>
+                    </div>
+                </div>
 
                 <StepForm
                     step={step}

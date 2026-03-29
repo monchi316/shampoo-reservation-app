@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
 
 const supabase = createClient(
     process.env.SUPABASE_URL!,
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
     let query = supabase
         .from("reservations")
         .select("*")
+        .eq("tenant_id", DEFAULT_TENANT_ID)
         .order("date", { ascending: true })
         .order("time", { ascending: true })
         .limit(500)

@@ -29,6 +29,16 @@ export default function AdminHomePage() {
                             サービス実施入力、日次集計表示
                         </p>
                     </Link>
+
+                    <Link
+                        href="/admin/settings"
+                        className="rounded-xl border border-slate-200 bg-white p-4 transition hover:bg-slate-50 sm:col-span-2"
+                    >
+                        <p className="font-semibold text-slate-900">店舗設定</p>
+                        <p className="text-sm text-slate-600">
+                            メニュー・料金、営業時間、予約可能枠（作業時間・移動時間）
+                        </p>
+                    </Link>
                 </div>
             </div>
         </div>

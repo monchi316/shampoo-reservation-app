@@ -1,6 +1,19 @@
 "use client"
 
+import { useEffect, useMemo, useState } from "react"
+import { menusToPriceMap, totalForCars } from "../lib/menuPricing"
 import { supabase } from "../lib/supabase"
+
+const CLIENT_DEFAULT_TENANT_ID =
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEFAULT_TENANT_ID) ||
+    "00000000-0000-4000-8000-000000000001"
+
+const FALLBACK_MENU_PRICES: Record<string, number> = {
+    size_s: 8000,
+    size_m: 9000,
+    size_l: 10000,
+    interior_addon: 3000,
+}
 
 export default function PriceSummary({
     formData,
@@ -14,14 +27,22 @@ export default function PriceSummary({
         (c: any) => c.maker && c.model && c.size
     )
 
-    const getBasePrice = (size: string) =>
-        size === "S" ? 8000 : size === "M" ? 9000 : size === "L" ? 10000 : 0
+    const [menuPrices, setMenuPrices] = useState<Record<string, number>>(FALLBACK_MENU_PRICES)
 
-    // 複数台予約の合計金額
-    const total = cars.reduce((sum: number, car: any) => {
-        const base = getBasePrice(car.size)
-        return sum + (formData.interior ? base + 3000 : base)
-    }, 0)
+    useEffect(() => {
+        fetch("/api/public/tenant-config")
+            .then((r) => r.json())
+            .then((j) => {
+                const map = menusToPriceMap(j?.menus || [])
+                if (Object.keys(map).length > 0) setMenuPrices(map)
+            })
+            .catch(() => { })
+    }, [])
+
+    const total = useMemo(
+        () => totalForCars(cars, !!formData.interior, menuPrices),
+        [cars, formData.interior, menuPrices]
+    )
 
     const handleReserve = async () => {
         // Current LINE user (for new reservation flow).
@@ -35,6 +56,28 @@ export default function PriceSummary({
             return
         }
 
+        const availBody: Record<string, unknown> = {
+            date: formData.date,
+            time: formData.time,
+            numCars: cars.length,
+            tenantId: CLIENT_DEFAULT_TENANT_ID,
+        }
+        if (mode === "update" && targetGroupId) {
+            availBody.excludeGroupId = targetGroupId
+        } else if (mode === "update" && reservationId) {
+            availBody.excludeReservationIds = [reservationId]
+        }
+        const avail = await fetch("/api/public/availability-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(availBody),
+        })
+        const availJson = await avail.json().catch(() => ({}))
+        if (!availJson.ok) {
+            alert(availJson.reason || "この日時は予約できません。")
+            return
+        }
+
         let currentReservationId = reservationId
         let currentGroupId = targetGroupId || ""
         if (mode === "update") {
@@ -45,18 +88,7 @@ export default function PriceSummary({
             }
 
             if (targetGroupId) {
-                // グループ予約は一度削除して、最新内容で同じ group_id に再作成。
-                const { error: deleteError } = await supabase
-                    .from("reservations")
-                    .delete()
-                    .eq("group_id", targetGroupId)
-
-                if (deleteError) {
-                    console.error("更新前削除エラー:", deleteError)
-                    alert("更新失敗")
-                    return
-                }
-
+                // グループ予約は一度削除して、最新内容で同じ group_id に再作成（RLS 回避のため API 経由）。
                 const payload = cars.map((car: any) => ({
                     group_id: targetGroupId,
                     user_id: lineUserId,
@@ -67,21 +99,25 @@ export default function PriceSummary({
                     date: formData.date,
                     time: formData.time,
                     address: formData.address,
-                    interior: formData.interior,
+                    interior: !!formData.interior,
                 }))
 
-                const { data, error } = await supabase
-                    .from("reservations")
-                    .insert(payload)
-                    .select()
-                    .order("id", { ascending: true })
-
-                if (error || !data || data.length === 0) {
-                    console.error("更新エラー:", error)
-                    alert("更新失敗")
+                const res = await fetch("/api/public/reservations", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        action: "replace_group",
+                        group_id: targetGroupId,
+                        rows: payload,
+                    }),
+                })
+                const json = await res.json().catch(() => ({}))
+                if (!res.ok || !Array.isArray(json.data) || json.data.length === 0) {
+                    console.error("更新エラー:", json)
+                    alert(json.error || "更新失敗")
                     return
                 }
-                currentReservationId = data[0].id
+                currentReservationId = json.data[0].id
                 currentGroupId = targetGroupId
             } else {
                 // 旧データ（単体予約）は id 指定で更新。
@@ -90,23 +126,28 @@ export default function PriceSummary({
                     return
                 }
                 const firstCar = cars[0]
-                const { error } = await supabase
-                    .from("reservations")
-                    .update({
-                        user_name: lineUserName,
-                        maker: firstCar.maker,
-                        model: firstCar.model,
-                        size: firstCar.size,
-                        date: formData.date,
-                        time: formData.time,
-                        address: formData.address,
-                        interior: formData.interior,
-                    })
-                    .eq("id", reservationId)
-
-                if (error) {
-                    console.error("更新エラー:", error)
-                    alert("更新失敗")
+                const res = await fetch("/api/public/reservations", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        action: "update_one",
+                        reservation_id: reservationId,
+                        fields: {
+                            user_name: lineUserName,
+                            maker: firstCar.maker,
+                            model: firstCar.model,
+                            size: firstCar.size,
+                            date: formData.date,
+                            time: formData.time,
+                            address: formData.address,
+                            interior: !!formData.interior,
+                        },
+                    }),
+                })
+                const json = await res.json().catch(() => ({}))
+                if (!res.ok) {
+                    console.error("更新エラー:", json)
+                    alert(json.error || "更新失敗")
                     return
                 }
             }
@@ -127,21 +168,20 @@ export default function PriceSummary({
                 date: formData.date,
                 time: formData.time,
                 address: formData.address,
-                interior: formData.interior,
+                interior: !!formData.interior,
             }))
-            const { data, error } = await supabase
-                .from("reservations")
-                .insert(payload)
-                .select()
-                .order("id", { ascending: true })
-
-            if (error || !data || data.length === 0) {
-                console.error("予約エラー:", error)
-                alert("予約失敗")
+            const res = await fetch("/api/public/reservations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "insert", rows: payload }),
+            })
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok || !Array.isArray(json.data) || json.data.length === 0) {
+                console.error("予約エラー:", json)
+                alert(json.error || "予約失敗")
                 return
             }
-            // 先頭予約IDをリンク用に利用
-            currentReservationId = data[0].id
+            currentReservationId = json.data[0].id
         }
 
         // ユーザーマスタへ最新のよく使う情報を保存（サーバーAPI経由）

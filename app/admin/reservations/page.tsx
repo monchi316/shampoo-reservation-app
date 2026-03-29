@@ -2,6 +2,12 @@
 
 import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
+import {
+    googleMapsNavigationUrl,
+    reservationStatusBadgeClass,
+    reservationStatusLabelJa,
+    RESERVATION_STATUS_OPTIONS,
+} from "../lib/reservationStatus"
 
 type Reservation = {
     id: string
@@ -96,10 +102,12 @@ export default function AdminReservationsPage() {
                                 onChange={(e) => setStatus(e.target.value)}
                                 className={controlClass}
                             >
-                                <option value="all">全ステータス</option>
-                                <option value="confirmed">confirmed</option>
-                                <option value="done">done</option>
-                                <option value="cancelled">cancelled</option>
+                                <option value="all">すべて</option>
+                                {RESERVATION_STATUS_OPTIONS.map((o) => (
+                                    <option key={o.value} value={o.value}>
+                                        {o.label}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <div className="sm:col-span-2 lg:col-span-2">
@@ -132,7 +140,10 @@ export default function AdminReservationsPage() {
                     <p className="text-slate-700">予約がありません</p>
                 ) : (
                     <div className="space-y-3">
-                        {grouped.map((g) => (
+                        {grouped.map((g) => {
+                            const addr = (g.first.address || "").trim()
+                            const navHref = addr ? googleMapsNavigationUrl(addr) : null
+                            return (
                             <div key={g.key} className="rounded-xl border border-slate-200 p-4">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
@@ -140,16 +151,35 @@ export default function AdminReservationsPage() {
                                             {g.first.user_name || "名前未登録"} / {g.first.date} {g.first.time}
                                         </p>
                                         <p className="text-sm text-slate-800">
-                                            {g.count}台 / {g.first.address}
+                                            {g.count}台 / {g.first.address || "住所なし"}
                                         </p>
                                         <p className="text-xs text-slate-600">
                                             group_id: {g.first.group_id || "-"}
                                         </p>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-900">
-                                            {g.first.status || "confirmed"}
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                        <span
+                                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${reservationStatusBadgeClass(g.first.status)}`}
+                                        >
+                                            {reservationStatusLabelJa(g.first.status)}
                                         </span>
+                                        {navHref ? (
+                                            <a
+                                                href={navHref}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="rounded-lg border border-emerald-600 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"
+                                            >
+                                                ナビ開始
+                                            </a>
+                                        ) : (
+                                            <span
+                                                className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-400"
+                                                title="住所が登録されていないためナビを開けません"
+                                            >
+                                                ナビ（住所なし）
+                                            </span>
+                                        )}
                                         <Link
                                             href={`/admin/reservations/${g.first.id}`}
                                             className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
@@ -159,7 +189,8 @@ export default function AdminReservationsPage() {
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 )}
             </div>
