@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useAdminTenant } from "../adminTenantContext"
 
 type DailyRow = {
     date: string
@@ -33,6 +34,7 @@ type SalesRow = {
 }
 
 export default function AdminSalesPage() {
+    const { tenantId, ready, canManageSettings } = useAdminTenant()
     const [from, setFrom] = useState("")
     const [to, setTo] = useState("")
     const [loading, setLoading] = useState(true)
@@ -43,9 +45,11 @@ export default function AdminSalesPage() {
     >([])
     const [rows, setRows] = useState<SalesRow[]>([])
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
+        if (!tenantId) return
         setLoading(true)
         const params = new URLSearchParams()
+        params.set("tenantId", tenantId)
         if (from) params.set("from", from)
         if (to) params.set("to", to)
         const res = await fetch(`/api/admin/sales?${params.toString()}`)
@@ -55,11 +59,12 @@ export default function AdminSalesPage() {
         setByStaff(Array.isArray(json?.byStaff) ? json.byStaff : [])
         setRows(Array.isArray(json?.rows) ? json.rows : [])
         setLoading(false)
-    }
+    }, [tenantId, from, to])
 
     useEffect(() => {
-        fetchData()
-    }, [])
+        if (!ready || !tenantId) return
+        void fetchData()
+    }, [ready, tenantId, fetchData])
 
     const totals = useMemo(() => {
         return daily.reduce(
@@ -83,112 +88,149 @@ export default function AdminSalesPage() {
     return (
         <div className="min-h-screen bg-slate-50 p-4">
             <div className="mx-auto max-w-6xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                {ready && !canManageSettings ? (
+                    <div className="p-8">
+                        <h1 className="mb-2 text-2xl font-bold text-slate-900">売上管理</h1>
+                        <p className="text-sm text-amber-900">
+                            この画面はオーナー（またはスーパー管理者）のみ利用できます。
+                        </p>
+                        <Link href="/admin" className="mt-4 inline-block text-sm font-medium text-indigo-700 hover:underline">
+                            管理トップへ戻る
+                        </Link>
+                    </div>
+                ) : null}
+                {ready && canManageSettings ? (
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <h1 className="text-2xl font-bold text-slate-900">売上管理</h1>
                     <div className="flex items-center gap-3">
-                        <a
-                            href={`/api/admin/sales?${new URLSearchParams(
-                                Object.fromEntries(
-                                    Object.entries({ from, to }).filter(([, v]) => !!v)
-                                )
-                            ).toString()}&format=csv`}
-                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
-                        >
-                            CSVダウンロード
-                        </a>
+                        {tenantId ? (
+                            <a
+                                href={`/api/admin/sales?${new URLSearchParams({
+                                    tenantId,
+                                    ...(from ? { from } : {}),
+                                    ...(to ? { to } : {}),
+                                    format: "csv",
+                                }).toString()}`}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+                            >
+                                CSVダウンロード
+                            </a>
+                        ) : null}
                         <Link href="/admin" className="text-sm font-medium text-indigo-700 hover:underline">
                             管理トップへ戻る
                         </Link>
                     </div>
                 </div>
+                ) : null}
 
-                <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-                    <p className="mb-3 text-sm font-semibold text-slate-900">集計期間</p>
-                    <div className="flex flex-wrap items-end gap-3">
-                        <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
-                            <label className={labelClass} htmlFor="admin-sales-from">
-                                開始日
-                            </label>
-                            <input
-                                id="admin-sales-from"
-                                type="date"
-                                value={from}
-                                onChange={(e) => setFrom(e.target.value)}
-                                className={controlClass}
-                            />
+                {ready && canManageSettings ? (
+                    <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                        <p className="mb-3 text-sm font-semibold text-slate-900">集計期間</p>
+                        <div className="flex flex-wrap items-end gap-3">
+                            <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
+                                <label className={labelClass} htmlFor="admin-sales-from">
+                                    開始日
+                                </label>
+                                <input
+                                    id="admin-sales-from"
+                                    type="date"
+                                    value={from}
+                                    onChange={(e) => setFrom(e.target.value)}
+                                    className={controlClass}
+                                />
+                            </div>
+                            <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
+                                <label className={labelClass} htmlFor="admin-sales-to">
+                                    終了日
+                                </label>
+                                <input
+                                    id="admin-sales-to"
+                                    type="date"
+                                    value={to}
+                                    onChange={(e) => setTo(e.target.value)}
+                                    className={controlClass}
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={fetchData}
+                                className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                            >
+                                集計更新
+                            </button>
                         </div>
-                        <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
-                            <label className={labelClass} htmlFor="admin-sales-to">
-                                終了日
-                            </label>
-                            <input
-                                id="admin-sales-to"
-                                type="date"
-                                value={to}
-                                onChange={(e) => setTo(e.target.value)}
-                                className={controlClass}
-                            />
+                    </div>
+                ) : null}
+
+                {ready && canManageSettings ? (
+                    <div className="mb-5 grid gap-3 sm:grid-cols-4">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-medium text-slate-800">件数</p>
+                            <p className="text-xl font-bold text-slate-900">{totals.count}</p>
                         </div>
-                        <button
-                            type="button"
-                            onClick={fetchData}
-                            className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-                        >
-                            集計更新
-                        </button>
-                    </div>
-                </div>
-
-                <div className="mb-5 grid gap-3 sm:grid-cols-4">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-sm font-medium text-slate-800">件数</p>
-                        <p className="text-xl font-bold text-slate-900">{totals.count}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-sm font-medium text-slate-800">基本売上</p>
-                        <p className="text-xl font-bold text-slate-900">¥{totals.sales.toLocaleString()}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-sm font-medium text-slate-800">追加料金</p>
-                        <p className="text-xl font-bold text-slate-900">¥{totals.extra.toLocaleString()}</p>
-                    </div>
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                        <p className="text-sm font-medium text-emerald-900">合計</p>
-                        <p className="text-xl font-bold text-emerald-900">¥{totals.grand.toLocaleString()}</p>
-                    </div>
-                </div>
-
-                {loading ? (
-                    <p className="text-slate-800">読み込み中...</p>
-                ) : (
-                    <>
-                        <div className="mb-6 overflow-x-auto rounded-xl border border-slate-200">
-                            <p className="border-b border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">
-                                日付別売上
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-medium text-slate-800">基本売上</p>
+                            <p className="text-xl font-bold text-slate-900">
+                                ¥{totals.sales.toLocaleString()}
                             </p>
-                            <table className="min-w-full text-sm">
-                                <thead className="bg-slate-100 text-left">
-                                    <tr>
-                                        <th className={thClass}>日付</th>
-                                        <th className={thClass}>件数</th>
-                                        <th className={thClass}>基本売上</th>
-                                        <th className={thClass}>追加料金</th>
-                                        <th className={thClass}>合計</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {daily.map((d) => (
-                                        <tr key={d.date} className="border-t border-slate-200 bg-white">
-                                            <td className={tdClass}>{d.date}</td>
-                                            <td className={tdClass}>{d.count}</td>
-                                            <td className={tdClass}>¥{d.sales_total.toLocaleString()}</td>
-                                            <td className={tdClass}>¥{d.extra_total.toLocaleString()}</td>
-                                            <td className={`${tdClass} font-semibold`}>¥{d.grand_total.toLocaleString()}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
                         </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-medium text-slate-800">追加料金</p>
+                            <p className="text-xl font-bold text-slate-900">
+                                ¥{totals.extra.toLocaleString()}
+                            </p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                            <p className="text-sm font-medium text-emerald-900">合計</p>
+                            <p className="text-xl font-bold text-emerald-900">
+                                ¥{totals.grand.toLocaleString()}
+                            </p>
+                        </div>
+                    </div>
+                ) : null}
+
+                {ready && canManageSettings ? (
+                    <>
+                        {loading ? (
+                            <p className="text-slate-800">読み込み中...</p>
+                        ) : (
+                            <>
+                                <div className="mb-6 overflow-x-auto rounded-xl border border-slate-200">
+                                    <p className="border-b border-slate-200 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">
+                                        日付別売上
+                                    </p>
+                                    <table className="min-w-full text-sm">
+                                        <thead className="bg-slate-100 text-left">
+                                            <tr>
+                                                <th className={thClass}>日付</th>
+                                                <th className={thClass}>件数</th>
+                                                <th className={thClass}>基本売上</th>
+                                                <th className={thClass}>追加料金</th>
+                                                <th className={thClass}>合計</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {daily.map((d) => (
+                                                <tr
+                                                    key={d.date}
+                                                    className="border-t border-slate-200 bg-white"
+                                                >
+                                                    <td className={tdClass}>{d.date}</td>
+                                                    <td className={tdClass}>{d.count}</td>
+                                                    <td className={tdClass}>
+                                                        ¥{d.sales_total.toLocaleString()}
+                                                    </td>
+                                                    <td className={tdClass}>
+                                                        ¥{d.extra_total.toLocaleString()}
+                                                    </td>
+                                                    <td className={`${tdClass} font-semibold`}>
+                                                        ¥{d.grand_total.toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
 
                         <div className="mb-6 rounded-xl border border-slate-200 p-4">
                             <p className="mb-3 font-semibold text-slate-900">月次売上グラフ（合計）</p>
@@ -276,8 +318,10 @@ export default function AdminSalesPage() {
                                 </tbody>
                             </table>
                         </div>
+                            </>
+                        )}
                     </>
-                )}
+                ) : null}
             </div>
         </div>
     )

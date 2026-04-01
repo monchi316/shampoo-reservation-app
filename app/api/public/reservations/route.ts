@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { assertReservationSlotAvailable } from "@/app/lib/serverTenantData"
 import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import { ensureTenantExists, normalizeTenantId } from "@/app/lib/serverTenantResolver"
 
 const supabase = createClient(
     process.env.SUPABASE_URL!,
@@ -19,6 +20,7 @@ type InsertRow = {
     time: string
     address: string
     interior: boolean
+    addon_slugs?: string[]
 }
 
 function isInsertRow(x: unknown): x is InsertRow {
@@ -34,7 +36,10 @@ function isInsertRow(x: unknown): x is InsertRow {
         typeof r.date === "string" &&
         typeof r.time === "string" &&
         typeof r.address === "string" &&
-        typeof r.interior === "boolean"
+        typeof r.interior === "boolean" &&
+        (r.addon_slugs === undefined ||
+            (Array.isArray(r.addon_slugs) &&
+                r.addon_slugs.every((x) => typeof x === "string" && x.length > 0)))
     )
 }
 
@@ -45,7 +50,11 @@ function isInsertRow(x: unknown): x is InsertRow {
 export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const action = body?.action as string | undefined
-    const tenantId = DEFAULT_TENANT_ID
+    const tenantId = normalizeTenantId(body?.tenantId) || DEFAULT_TENANT_ID
+    const exists = await ensureTenantExists(supabase, tenantId)
+    if (!exists) {
+        return NextResponse.json({ error: "tenant が見つかりません" }, { status: 404 })
+    }
 
     if (action === "insert") {
         const rowsRaw = body?.rows
@@ -70,6 +79,7 @@ export async function POST(req: NextRequest) {
 
         const payload = rows.map((r) => ({
             ...r,
+            addon_slugs: Array.isArray(r.addon_slugs) ? r.addon_slugs : [],
             tenant_id: tenantId,
             status: "confirmed",
         }))
@@ -121,6 +131,7 @@ export async function POST(req: NextRequest) {
 
         const payload = rows.map((r) => ({
             ...r,
+            addon_slugs: Array.isArray(r.addon_slugs) ? r.addon_slugs : [],
             tenant_id: tenantId,
             status: "confirmed",
         }))
@@ -167,12 +178,17 @@ export async function POST(req: NextRequest) {
             "time",
             "address",
             "interior",
+            "addon_slugs",
         ])
         const patch: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(fields)) {
             if (!allowed.has(k)) continue
             if (k === "interior") {
                 patch[k] = !!v
+            } else if (k === "addon_slugs") {
+                if (Array.isArray(v) && v.every((x) => typeof x === "string" && x.length > 0)) {
+                    patch[k] = v
+                }
             } else if (typeof v === "string") {
                 patch[k] = v
             }
@@ -220,7 +236,11 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
     const id = req.nextUrl.searchParams.get("id")
     const groupId = req.nextUrl.searchParams.get("groupId")
-    const tenantId = DEFAULT_TENANT_ID
+    const tenantId = normalizeTenantId(req.nextUrl.searchParams.get("tenantId")) || DEFAULT_TENANT_ID
+    const exists = await ensureTenantExists(supabase, tenantId)
+    if (!exists) {
+        return NextResponse.json({ error: "tenant が見つかりません" }, { status: 404 })
+    }
 
     if (!id && !groupId) {
         return NextResponse.json({ error: "id または groupId が必要です" }, { status: 400 })

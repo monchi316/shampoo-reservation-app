@@ -1,11 +1,11 @@
-export const initLiff = async () => {
+export const initLiff = async (liffIdInput?: string | null) => {
     // サーバー側で実行された場合は何もしない。
     if (typeof window === "undefined") return null
 
     // 動的importにして、クライアント実行時だけLIFF SDKを読み込む。
     const liff = (await import("@line/liff")).default
 
-    const liffId = process.env.NEXT_PUBLIC_LIFF_ID
+    const liffId = liffIdInput || process.env.NEXT_PUBLIC_LIFF_ID
 
     // LIFF IDが未設定だと初期化できないため、ここで明示的にエラーにする。
     if (!liffId) {

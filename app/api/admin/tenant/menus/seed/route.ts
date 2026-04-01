@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import {
+    canManageTenantSettings,
+    requireAdminSession,
+    resolveAdminListTenantId,
+} from "@/app/lib/serverAdminAuth"
 
-const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 const DEFAULT_MENUS: {
     slug: string
@@ -20,8 +21,19 @@ const DEFAULT_MENUS: {
 ]
 
 /** 不足している標準メニュー行だけ INSERT（既存の料金は上書きしない） */
-export async function POST() {
-    const tenantId = DEFAULT_TENANT_ID
+export async function POST(req: NextRequest) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
+    if (!canManageTenantSettings(auth.access, tenantId)) {
+        return NextResponse.json({ error: "メニューを編集する権限がありません" }, { status: 403 })
+    }
+
     const { data: existing, error: selErr } = await supabase
         .from("service_menu_items")
         .select("slug")

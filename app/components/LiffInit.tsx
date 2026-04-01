@@ -3,14 +3,32 @@
 import { useEffect } from "react"
 import liff from "@line/liff"
 
-export default function LiffInit() {
+export default function LiffInit({ liffId }: { liffId: string | null }) {
     useEffect(() => {
         const init = async () => {
             try {
+                if (!liffId) {
+                    console.error("LIFF ID が未解決のため初期化できません。")
+                    return
+                }
                 // LIFF SDKを初期化。LIFF IDは .env.local から読み込む。
                 await liff.init({
-                    liffId: process.env.NEXT_PUBLIC_LIFF_ID!,
+                    liffId,
                 })
+
+                // ログイン検証用: ?forceLogin=1 で一度ログアウトし、tenantId/lid を残した redirect で再ログイン
+                const url = new URL(window.location.href)
+                const wantsForceLogin =
+                    url.searchParams.get("forceLogin") === "1" ||
+                    url.searchParams.get("forceLogin") === "true"
+                url.searchParams.delete("forceLogin")
+                const redirectUri = url.toString()
+
+                if (wantsForceLogin && liff.isLoggedIn()) {
+                    await liff.logout()
+                    liff.login({ redirectUri })
+                    return
+                }
 
                 if (liff.isLoggedIn()) {
                     // LINEログイン済みならプロフィールを取得する。
@@ -28,8 +46,8 @@ export default function LiffInit() {
 
                     console.log("✅ LINEログイン情報保存", profile)
                 } else {
-                    // 未ログインならLINEログイン画面へ遷移。
-                    liff.login()
+                    // 未ログインならLINEログイン画面へ遷移（クエリは redirectUri で引き継ぐ）
+                    liff.login({ redirectUri })
                 }
             } catch (err) {
                 console.error("💥 LIFF初期化エラー:", err)
@@ -37,7 +55,7 @@ export default function LiffInit() {
         }
 
         init()
-    }, [])
+    }, [liffId])
 
     return null
 }

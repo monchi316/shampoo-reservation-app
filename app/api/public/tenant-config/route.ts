@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import { ensureTenantExists, normalizeTenantId } from "@/app/lib/serverTenantResolver"
 
 const supabase = createClient(
     process.env.SUPABASE_URL!,
@@ -23,7 +24,11 @@ async function resolveLogoUrl(path: string) {
 
 /** 予約フォーム用: メニュー料金・テナントID（将来ログインと連携） */
 export async function GET(req: NextRequest) {
-    const tenantId = req.nextUrl.searchParams.get("tenantId") || DEFAULT_TENANT_ID
+    const tenantId = normalizeTenantId(req.nextUrl.searchParams.get("tenantId")) || DEFAULT_TENANT_ID
+    const exists = await ensureTenantExists(supabase, tenantId)
+    if (!exists) {
+        return NextResponse.json({ error: "tenant が見つかりません" }, { status: 404 })
+    }
 
     const { data: menus, error: mErr } = await supabase
         .from("service_menu_items")

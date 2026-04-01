@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import { setTenantContextToStorage } from "../lib/tenantClient"
 
 export default function CancelPage() {
     const searchParams = useSearchParams()
     const id = searchParams.get('id')
     const groupId = searchParams.get('groupId')
+    const tenantId = searchParams.get("tenantId")
     const router = useRouter()
 
     const [status, setStatus] = useState<'confirm' | 'loading' | 'done' | 'error'>('confirm')
@@ -19,6 +21,7 @@ export default function CancelPage() {
         const url = new URL("/api/cancel-reservation", window.location.origin)
         url.searchParams.set("id", id)
         if (groupId) url.searchParams.set("groupId", groupId)
+        if (tenantId) url.searchParams.set("tenantId", tenantId)
 
         const res = await fetch(url.toString())
         if (!res.ok) {
@@ -34,10 +37,16 @@ export default function CancelPage() {
         // Jump to edit page with the same reservation id.
         router.push(
             groupId
-                ? `/edit-reservation?id=${id}&groupId=${groupId}`
-                : `/edit-reservation?id=${id}`
+                ? `/edit-reservation?id=${id}&groupId=${groupId}${tenantId ? `&tenantId=${encodeURIComponent(tenantId)}` : ""}`
+                : `/edit-reservation?id=${id}${tenantId ? `&tenantId=${encodeURIComponent(tenantId)}` : ""}`
         )
     }
+
+    useEffect(() => {
+        if (tenantId) {
+            setTenantContextToStorage({ tenantId, liffId: null })
+        }
+    }, [tenantId])
 
     if (!id) {
         return <div className="p-4 text-center">予約IDが見つかりません</div>

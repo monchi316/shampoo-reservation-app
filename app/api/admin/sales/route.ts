@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import { canManageTenantSettings, requireAdminSession, resolveAdminListTenantId } from "@/app/lib/serverAdminAuth"
 
-const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 type ReservationRow = {
     id: string
@@ -21,6 +18,19 @@ type ReservationRow = {
 }
 
 export async function GET(req: NextRequest) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
+    // スタッフは売上管理をできない（オーナー / スーパー管理者のみ）
+    if (!canManageTenantSettings(auth.access, tenantId)) {
+        return NextResponse.json({ error: "この機能に対する権限がありません" }, { status: 403 })
+    }
+
     const sp = req.nextUrl.searchParams
     const from = sp.get("from")
     const to = sp.get("to")
@@ -29,7 +39,7 @@ export async function GET(req: NextRequest) {
     let query = supabase
         .from("reservations")
         .select("id, date, user_name, maker, model, size, sales_amount, extra_fee, service_done_at, staff_name")
-        .eq("tenant_id", DEFAULT_TENANT_ID)
+        .eq("tenant_id", tenantId)
         .eq("status", "done")
         .order("service_done_at", { ascending: false })
         .limit(1000)
@@ -66,9 +76,7 @@ export async function GET(req: NextRequest) {
         dailyMap.set(key, prev)
     }
 
-    const daily = Array.from(dailyMap.values()).sort((a, b) =>
-        a.date < b.date ? 1 : -1
-    )
+    const daily = Array.from(dailyMap.values()).sort((a, b) => (a.date < b.date ? 1 : -1))
 
     const monthMap = new Map<
         string,
@@ -113,12 +121,8 @@ export async function GET(req: NextRequest) {
         staffMap.set(staffKey, staffPrev)
     }
 
-    const monthly = Array.from(monthMap.values()).sort((a, b) =>
-        a.month < b.month ? 1 : -1
-    )
-    const byStaff = Array.from(staffMap.values()).sort(
-        (a, b) => b.grand_total - a.grand_total
-    )
+    const monthly = Array.from(monthMap.values()).sort((a, b) => (a.month < b.month ? 1 : -1))
+    const byStaff = Array.from(staffMap.values()).sort((a, b) => b.grand_total - a.grand_total)
 
     if (format === "csv") {
         const header = [

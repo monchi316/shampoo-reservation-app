@@ -2,6 +2,12 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useAdminTenant } from "../adminTenantContext"
+
+function adminTenantQs(tenantId: string | null) {
+    if (!tenantId) return ""
+    return `?tenantId=${encodeURIComponent(tenantId)}`
+}
 
 type MenuRow = {
     id: string
@@ -55,6 +61,7 @@ function sortMenusForDisplay(rows: MenuRow[]): MenuRow[] {
 }
 
 export default function AdminSettingsPage() {
+    const { tenantId, ready, canManageSettings } = useAdminTenant()
     const [menus, setMenus] = useState<MenuRow[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -65,25 +72,39 @@ export default function AdminSettingsPage() {
     const [uniformClose, setUniformClose] = useState("18:00")
     const [avgService, setAvgService] = useState(60)
     const [avgTravel, setAvgTravel] = useState(30)
+    const [bookingLeadDays, setBookingLeadDays] = useState(0)
+    const [bookingLeadHours, setBookingLeadHours] = useState(0)
+    const [reminderEnabled, setReminderEnabled] = useState(true)
+    const [reminderTemplate, setReminderTemplate] = useState("")
     const [weekly, setWeekly] = useState<WeeklyRow[]>([])
     const [exceptions, setExceptions] = useState<ExceptionRow[]>([])
     const [seeding, setSeeding] = useState(false)
 
     const [logoUrl, setLogoUrl] = useState<string | null>(null)
-    const [logoPath, setLogoPath] = useState<string | null>(null)
     const [logoFile, setLogoFile] = useState<File | null>(null)
     const [uploadingLogo, setUploadingLogo] = useState(false)
+    const [savingLine, setSavingLine] = useState(false)
+    const [lineLiffId, setLineLiffId] = useState("")
+    const [lineChannelId, setLineChannelId] = useState("")
+    const [lineChannelSecret, setLineChannelSecret] = useState("")
+    const [lineChannelAccessToken, setLineChannelAccessToken] = useState("")
+    const [linePushEnabled, setLinePushEnabled] = useState(true)
+    const [lineTokenLast4, setLineTokenLast4] = useState<string | null>(null)
+    const [lineConfigured, setLineConfigured] = useState(false)
+    const [lineEncryptionReady, setLineEncryptionReady] = useState(true)
 
     const loadMenus = useCallback(async () => {
-        const res = await fetch("/api/admin/tenant/menus")
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/menus${adminTenantQs(tenantId)}`)
         const json = await res.json()
         if (res.ok) setMenus(json.data || [])
-    }, [])
+    }, [tenantId])
 
     const sortedMenus = useMemo(() => sortMenusForDisplay(menus), [menus])
 
     const loadScheduling = useCallback(async () => {
-        const res = await fetch("/api/admin/tenant/scheduling")
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/scheduling${adminTenantQs(tenantId)}`)
         const json = await res.json()
         if (!res.ok) return
         const s = json.settings
@@ -93,15 +114,24 @@ export default function AdminSettingsPage() {
             setUniformClose((s.uniform_close || "18:00").slice(0, 5))
             setAvgService(s.avg_service_minutes_per_car ?? 60)
             setAvgTravel(s.avg_travel_minutes ?? 30)
+            setBookingLeadDays(s.booking_lead_days ?? 0)
+            setBookingLeadHours(s.booking_lead_hours ?? 0)
         }
         if (Array.isArray(json.weekly) && json.weekly.length > 0) {
             setWeekly(
-                json.weekly.map((w: any) => ({
+                json.weekly.map(
+                    (w: {
+                        day_of_week: number
+                        is_closed: boolean
+                        open_time: unknown
+                        close_time: unknown
+                    }) => ({
                     day_of_week: w.day_of_week,
                     is_closed: w.is_closed,
                     open_time: w.open_time ? String(w.open_time).slice(0, 5) : null,
                     close_time: w.close_time ? String(w.close_time).slice(0, 5) : null,
-                }))
+                })
+                )
             )
         } else {
             setWeekly(
@@ -115,31 +145,68 @@ export default function AdminSettingsPage() {
         }
         if (Array.isArray(json.exceptions)) {
             setExceptions(
-                json.exceptions.map((e: any) => ({
+                json.exceptions.map(
+                    (e: {
+                        exception_date: string
+                        is_closed: boolean
+                        open_time: unknown
+                        close_time: unknown
+                    }) => ({
                     exception_date: e.exception_date,
                     is_closed: e.is_closed,
                     open_time: e.open_time ? String(e.open_time).slice(0, 5) : null,
                     close_time: e.close_time ? String(e.close_time).slice(0, 5) : null,
-                }))
+                })
+                )
             )
         }
-    }, [])
+        if (json?.reminder) {
+            setReminderEnabled(json.reminder.reminder_enabled !== false)
+            setReminderTemplate(String(json.reminder.reminder_template || ""))
+        } else {
+            setReminderEnabled(true)
+            setReminderTemplate("")
+        }
+    }, [tenantId])
 
     const loadLogo = useCallback(async () => {
-        const res = await fetch("/api/admin/tenant/logo")
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/logo${adminTenantQs(tenantId)}`)
         const json = await res.json().catch(() => ({}))
         if (!res.ok) return
         setLogoUrl((json?.logoUrl as string | null) || null)
-        setLogoPath((json?.logoPath as string | null) || null)
-    }, [])
+    }, [tenantId])
+
+    const loadLineChannel = useCallback(async () => {
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/line-channel${adminTenantQs(tenantId)}`)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) return
+        setLineLiffId(String(json?.liff_id || ""))
+        setLineChannelId(String(json?.line_channel_id || ""))
+        setLinePushEnabled(json?.line_push_enabled !== false)
+        setLineTokenLast4((json?.line_token_last4 as string | null) || null)
+        setLineConfigured(!!json?.configured)
+        setLineEncryptionReady(json?.encryption_ready !== false)
+        // セキュリティ上、平文は返さないため入力欄は毎回空にする
+        setLineChannelSecret("")
+        setLineChannelAccessToken("")
+    }, [tenantId])
 
     useEffect(() => {
+        if (!ready) return
+        if (!tenantId) {
+            ;(async () => {
+                setLoading(false)
+            })()
+            return
+        }
         ;(async () => {
             setLoading(true)
-            await Promise.all([loadMenus(), loadScheduling(), loadLogo()])
+            await Promise.all([loadMenus(), loadScheduling(), loadLogo(), loadLineChannel()])
             setLoading(false)
         })()
-    }, [loadMenus, loadScheduling, loadLogo])
+    }, [ready, tenantId, loadMenus, loadScheduling, loadLogo, loadLineChannel])
 
     const uploadLogo = async () => {
         if (!logoFile) return
@@ -148,7 +215,8 @@ export default function AdminSettingsPage() {
         const fd = new FormData()
         fd.append("file", logoFile)
 
-        const res = await fetch("/api/admin/tenant/logo", {
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/logo${adminTenantQs(tenantId)}`, {
             method: "POST",
             body: fd,
         })
@@ -167,7 +235,8 @@ export default function AdminSettingsPage() {
     const deleteLogo = async () => {
         setUploadingLogo(true)
         setMsg("")
-        const res = await fetch("/api/admin/tenant/logo", { method: "DELETE" })
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/logo${adminTenantQs(tenantId)}`, { method: "DELETE" })
         const json = await res.json().catch(() => ({}))
         setUploadingLogo(false)
         if (!res.ok) {
@@ -197,14 +266,14 @@ export default function AdminSettingsPage() {
     const addMenu = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault()
         const fd = new FormData(e.currentTarget)
-        const slug = String(fd.get("slug") || "").trim()
         const label = String(fd.get("label") || "").trim()
         const price = Number(fd.get("price"))
-        if (!slug || !label) return
-        const res = await fetch("/api/admin/tenant/menus", {
+        if (!label) return
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/menus${adminTenantQs(tenantId)}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ slug, label, price, sort_order: 100 }),
+            body: JSON.stringify({ label, price, sort_order: 100 }),
         })
         const json = await res.json().catch(() => ({}))
         if (!res.ok) {
@@ -218,7 +287,10 @@ export default function AdminSettingsPage() {
     const seedDefaultMenus = async () => {
         setSeeding(true)
         setMsg("")
-        const res = await fetch("/api/admin/tenant/menus/seed", { method: "POST" })
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/menus/seed${adminTenantQs(tenantId)}`, {
+            method: "POST",
+        })
         const json = await res.json().catch(() => ({}))
         setSeeding(false)
         if (!res.ok) {
@@ -232,7 +304,8 @@ export default function AdminSettingsPage() {
     const saveScheduling = async () => {
         setSaving(true)
         setMsg("")
-        const res = await fetch("/api/admin/tenant/scheduling", {
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/scheduling${adminTenantQs(tenantId)}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -241,6 +314,10 @@ export default function AdminSettingsPage() {
                 uniform_close: uniformClose,
                 avg_service_minutes_per_car: avgService,
                 avg_travel_minutes: avgTravel,
+                booking_lead_days: bookingLeadDays,
+                booking_lead_hours: bookingLeadHours,
+                reminder_enabled: reminderEnabled,
+                reminder_template: reminderTemplate,
                 weekly,
                 exceptions,
             }),
@@ -253,6 +330,34 @@ export default function AdminSettingsPage() {
         }
         setMsg("営業・予約設定を保存しました")
         loadScheduling()
+    }
+
+    const saveLineChannel = async () => {
+        setSavingLine(true)
+        setMsg("")
+        if (!tenantId) return
+        const payload: Record<string, unknown> = {
+            liff_id: lineLiffId,
+            line_channel_id: lineChannelId,
+            line_push_enabled: linePushEnabled,
+            is_active: true,
+        }
+        if (lineChannelSecret.trim()) payload.line_channel_secret = lineChannelSecret.trim()
+        if (lineChannelAccessToken.trim()) payload.line_channel_access_token = lineChannelAccessToken.trim()
+
+        const res = await fetch(`/api/admin/tenant/line-channel${adminTenantQs(tenantId)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        })
+        const json = await res.json().catch(() => ({}))
+        setSavingLine(false)
+        if (!res.ok) {
+            setMsg(`LINE設定の保存失敗: ${json?.error || ""}`)
+            return
+        }
+        setMsg("LINE通知設定を保存しました")
+        await loadLineChannel()
     }
 
     const updateWeekly = (i: number, patch: Partial<WeeklyRow>) => {
@@ -269,6 +374,20 @@ export default function AdminSettingsPage() {
                 close_time: null,
             },
         ])
+    }
+
+    if (ready && !canManageSettings) {
+        return (
+            <div className="min-h-screen bg-slate-50 p-6">
+                <div className="mx-auto max-w-lg rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
+                    <p className="font-semibold">店舗設定を変更する権限がありません</p>
+                    <p className="mt-2 text-sm">スタッフは予約管理のみ操作できます。</p>
+                    <Link href="/admin" className="mt-4 inline-block text-indigo-700 underline">
+                        管理トップへ
+                    </Link>
+                </div>
+            </div>
+        )
     }
 
     if (loading) {
@@ -426,21 +545,19 @@ export default function AdminSettingsPage() {
 
                     <form onSubmit={addMenu} className="mt-6 border-t border-slate-200 pt-4">
                         <p className="mb-2 text-sm font-semibold text-slate-800">
-                            追加メニュー（新しい slug は下に並びます。予約画面の合計に載せるにはフォーム側の対応が別途必要です）
+                            追加メニュー（slug は表示名から自動生成します。予約画面の合計に載せるにはフォーム側の対応が別途必要です）
                         </p>
                         <div className="flex flex-wrap gap-2">
                             <input
-                                name="slug"
-                                placeholder="slug（例: option_wax）"
-                                className="rounded-lg border border-slate-300 p-2 text-sm"
-                                pattern="[a-z0-9_]+"
+                                name="label"
+                                placeholder="表示名"
+                                className="flex-1 rounded-lg border border-slate-300 p-2 text-sm text-slate-900 placeholder:text-slate-400"
                             />
-                            <input name="label" placeholder="表示名" className="flex-1 rounded-lg border border-slate-300 p-2 text-sm" />
                             <input
                                 name="price"
                                 type="number"
                                 placeholder="料金"
-                                className="w-28 rounded-lg border border-slate-300 p-2 text-sm"
+                                className="w-28 rounded-lg border border-slate-300 p-2 text-sm text-slate-900 placeholder:text-slate-400"
                             />
                             <button
                                 type="submit"
@@ -450,6 +567,82 @@ export default function AdminSettingsPage() {
                             </button>
                         </div>
                     </form>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h2 className="mb-3 text-lg font-semibold text-slate-900">LINE通知設定（企業別）</h2>
+                    <p className="mb-4 text-sm text-slate-600">
+                        この店舗専用のLINEチャネル情報を設定します。トークン/シークレットは暗号化して保存され、画面には再表示されません。
+                    </p>
+                    {!lineEncryptionReady && (
+                        <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                            サーバーの `LINE_CREDENTIALS_ENCRYPTION_KEY` が未設定です（32文字以上）。
+                        </p>
+                    )}
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">LIFF ID</label>
+                            <input
+                                value={lineLiffId}
+                                onChange={(e) => setLineLiffId(e.target.value)}
+                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                                placeholder="200xxxxxxx-xxxxxxx"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">Channel ID</label>
+                            <input
+                                value={lineChannelId}
+                                onChange={(e) => setLineChannelId(e.target.value)}
+                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                                placeholder="200xxxxxxxxx"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">
+                                Channel Secret（更新時のみ入力）
+                            </label>
+                            <input
+                                value={lineChannelSecret}
+                                onChange={(e) => setLineChannelSecret(e.target.value)}
+                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                                placeholder="入力時のみ上書き保存"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">
+                                Channel Access Token（更新時のみ入力）
+                            </label>
+                            <input
+                                value={lineChannelAccessToken}
+                                onChange={(e) => setLineChannelAccessToken(e.target.value)}
+                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                                placeholder="入力時のみ上書き保存"
+                            />
+                        </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
+                        <label className="flex items-center gap-2 text-slate-900">
+                            <input
+                                type="checkbox"
+                                checked={linePushEnabled}
+                                onChange={(e) => setLinePushEnabled(e.target.checked)}
+                            />
+                            LINE Push 通知を有効化
+                        </label>
+                        <span className="text-slate-600">
+                            状態: {lineConfigured ? "設定済み" : "未設定"}
+                            {lineTokenLast4 ? `（token末尾: ****${lineTokenLast4}）` : ""}
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        disabled={savingLine}
+                        onClick={saveLineChannel}
+                        className="mt-4 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                        {savingLine ? "保存中…" : "LINE通知設定を保存"}
+                    </button>
                 </section>
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -576,6 +769,53 @@ export default function AdminSettingsPage() {
                                 className="mt-0.5 block w-32 rounded-lg border border-slate-300 p-2 text-slate-900"
                             />
                         </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">
+                                予約受付最短リード（日）
+                            </label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={30}
+                                value={bookingLeadDays}
+                                onChange={(e) => setBookingLeadDays(Number(e.target.value))}
+                                className="mt-0.5 block w-24 rounded-lg border border-slate-300 p-2 text-slate-900"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">
+                                予約受付最短リード（時）
+                            </label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={23}
+                                value={bookingLeadHours}
+                                onChange={(e) => setBookingLeadHours(Number(e.target.value))}
+                                className="mt-0.5 block w-24 rounded-lg border border-slate-300 p-2 text-slate-900"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-900">
+                            <input
+                                type="checkbox"
+                                checked={reminderEnabled}
+                                onChange={(e) => setReminderEnabled(e.target.checked)}
+                            />
+                            前日リマインダー通知を有効化
+                        </label>
+                        <p className="mb-2 text-xs text-slate-600">
+                            {`{{customer_name}} {{reservation_date}} {{reservation_time}} {{cars_summary}} {{address}} {{tenant_name}} {{edit_url}} {{cancel_url}} を使用可能`}
+                        </p>
+                        <textarea
+                            value={reminderTemplate}
+                            onChange={(e) => setReminderTemplate(e.target.value)}
+                            placeholder="未入力時は標準テンプレートを使用します"
+                            rows={5}
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-900"
+                        />
                     </div>
 
                     <div className="mb-4">

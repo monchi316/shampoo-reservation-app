@@ -1,28 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import { canAccessTenant, requireAdminSession } from "@/app/lib/serverAdminAuth"
 
-const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 type Params = {
     params: Promise<{ id: string }>
 }
 
 export async function GET(_req: NextRequest, { params }: Params) {
+    const auth = await requireAdminSession(_req)
+    if (!auth.ok) return auth.response
+
     const { id } = await params
 
-    const { data, error } = await supabase
-        .from("reservations")
-        .select("*")
-        .eq("id", id)
-        .eq("tenant_id", DEFAULT_TENANT_ID)
-        .single()
+    const { data, error } = await supabase.from("reservations").select("*").eq("id", id).single()
 
     if (error || !data) {
         return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const tenantId = data.tenant_id as string
+    if (!canAccessTenant(auth.access, tenantId)) {
+        return NextResponse.json({ error: "この店舗へのアクセスは許可されていません" }, { status: 403 })
     }
 
     let grouped = [data]
@@ -31,12 +31,11 @@ export async function GET(_req: NextRequest, { params }: Params) {
             .from("reservations")
             .select("*")
             .eq("group_id", data.group_id)
-            .eq("tenant_id", DEFAULT_TENANT_ID)
+            .eq("tenant_id", tenantId)
             .order("id", { ascending: true })
         grouped = groupRows || [data]
     }
 
-    // reservations.user_name が空の古いデータ対策として users から補完
     let fallbackUserName: string | null = null
     if (!data.user_name && data.user_id) {
         const { data: userRow } = await supabase
@@ -63,6 +62,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
     const { id } = await params
     const body = await req.json().catch(() => ({}))
     const status = body?.status as string | undefined
@@ -103,13 +105,17 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const { data: baseRow, error: baseErr } = await supabase
         .from("reservations")
-        .select("id, group_id")
+        .select("id, group_id, tenant_id")
         .eq("id", id)
-        .eq("tenant_id", DEFAULT_TENANT_ID)
         .single()
 
     if (baseErr || !baseRow) {
         return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const tenantId = baseRow.tenant_id as string
+    if (!canAccessTenant(auth.access, tenantId)) {
+        return NextResponse.json({ error: "この店舗へのアクセスは許可されていません" }, { status: 403 })
     }
 
     const usePerRowSales =
@@ -149,7 +155,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
             .select("id")
             .in("id", targetIds)
             .eq("group_id", baseRow.group_id)
-            .eq("tenant_id", DEFAULT_TENANT_ID)
+            .eq("tenant_id", tenantId)
 
         if (vErr || !validRows || validRows.length !== targetIds.length) {
             return NextResponse.json(
@@ -168,7 +174,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
                 .from("reservations")
                 .update(rowPayload)
                 .eq("id", tid)
-                .eq("tenant_id", DEFAULT_TENANT_ID)
+                .eq("tenant_id", tenantId)
             if (error) {
                 return NextResponse.json({ error: error.message }, { status: 500 })
             }
@@ -176,7 +182,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         return NextResponse.json({ ok: true })
     }
 
-    let query = supabase.from("reservations").update(updatePayload).eq("tenant_id", DEFAULT_TENANT_ID)
+    let query = supabase.from("reservations").update(updatePayload).eq("tenant_id", tenantId)
 
     if (applyGroup && baseRow.group_id) {
         query = query.eq("group_id", baseRow.group_id)
@@ -197,7 +203,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
                 .select("id")
                 .in("id", targetIds)
                 .eq("group_id", baseRow.group_id)
-                .eq("tenant_id", DEFAULT_TENANT_ID)
+                .eq("tenant_id", tenantId)
 
             if (vErr || !validRows || validRows.length !== targetIds.length) {
                 return NextResponse.json(

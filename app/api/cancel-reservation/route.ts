@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { lineMessagingPush } from "@/app/lib/linePush"
 import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import { ensureTenantExists, normalizeTenantId } from "@/app/lib/serverTenantResolver"
 
 // サーバー権限（service role）でSupabaseへ接続する。
 const supabase = createClient(
@@ -13,16 +14,21 @@ export async function GET(req: NextRequest) {
     // URLの ?id=... を取得
     const id = req.nextUrl.searchParams.get("id")
     const groupId = req.nextUrl.searchParams.get("groupId")
+    const tenantId = normalizeTenantId(req.nextUrl.searchParams.get("tenantId")) || DEFAULT_TENANT_ID
 
     if (!id && !groupId) {
         return NextResponse.json({ error: "Missing id/groupId" }, { status: 400 })
+    }
+    const exists = await ensureTenantExists(supabase, tenantId)
+    if (!exists) {
+        return NextResponse.json({ error: "tenant が見つかりません" }, { status: 404 })
     }
 
     // 予約を cancelled に更新（confirmed の予約のみ対象）
     let query = supabase
         .from("reservations")
         .update({ status: "cancelled" })
-        .eq("tenant_id", DEFAULT_TENANT_ID)
+        .eq("tenant_id", tenantId)
         .eq("status", "confirmed")
         .select()
 
@@ -44,6 +50,8 @@ export async function GET(req: NextRequest) {
     }
 
     type CancelRow = {
+        id?: string | null
+        group_id?: string | null
         user_id?: string | null
         user_name?: string | null
         date?: string | null
@@ -76,7 +84,13 @@ ${carBlock}
 📍 住所：${addr}
 
 またのご利用をお待ちしております。`
-        await lineMessagingPush(userId, msg)
+        await lineMessagingPush({
+            tenantId,
+            toUserId: userId,
+            text: msg,
+            kind: "cancelled",
+            reservationGroupId: groupId || rows[0]?.group_id || rows[0]?.id || null,
+        })
     }
 
     return NextResponse.json({

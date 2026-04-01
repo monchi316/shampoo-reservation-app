@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useAdminTenant } from "../adminTenantContext"
 import {
     googleMapsNavigationUrl,
     reservationStatusBadgeClass,
@@ -23,15 +24,18 @@ type Reservation = {
 }
 
 export default function AdminReservationsPage() {
+    const { tenantId, ready } = useAdminTenant()
     const [items, setItems] = useState<Reservation[]>([])
     const [loading, setLoading] = useState(true)
     const [date, setDate] = useState("")
     const [status, setStatus] = useState("all")
     const [q, setQ] = useState("")
 
-    const fetchReservations = async () => {
+    const fetchReservations = useCallback(async () => {
+        if (!tenantId) return
         setLoading(true)
         const params = new URLSearchParams()
+        params.set("tenantId", tenantId)
         if (date) params.set("date", date)
         if (status) params.set("status", status)
         if (q) params.set("q", q)
@@ -40,11 +44,12 @@ export default function AdminReservationsPage() {
         const json = await res.json()
         setItems(Array.isArray(json?.data) ? json.data : [])
         setLoading(false)
-    }
+    }, [tenantId, date, status, q])
 
     useEffect(() => {
-        fetchReservations()
-    }, [])
+        if (!ready || !tenantId) return
+        void fetchReservations()
+    }, [ready, tenantId, fetchReservations])
 
     const grouped = useMemo(() => {
         // group_id があるものはまとめて表示、無いものは id をグループキーにする

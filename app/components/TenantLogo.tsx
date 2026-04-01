@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { buildTenantQueryParam, getTenantContextFromStorage, resolveTenantContextFromUrl } from "../lib/tenantClient"
 
 export default function TenantLogo({ className }: { className?: string }) {
     const [logoUrl, setLogoUrl] = useState<string | null>(null)
@@ -11,7 +12,10 @@ export default function TenantLogo({ className }: { className?: string }) {
 
         ;(async () => {
             try {
-                const res = await fetch("/api/public/tenant-config")
+                const tenantFromStorage = getTenantContextFromStorage()
+                const tenantFromUrl = resolveTenantContextFromUrl()
+                const tenantId = tenantFromStorage?.tenantId || tenantFromUrl.tenantIdHint
+                const res = await fetch(`/api/public/tenant-config?${buildTenantQueryParam(tenantId)}`)
                 const json = await res.json().catch(() => ({}))
                 if (!mounted) return
                 setLogoUrl((json?.logoUrl as string | null) || null)

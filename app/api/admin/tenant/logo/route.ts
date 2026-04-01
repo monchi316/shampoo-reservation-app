@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import {
+    canManageTenantSettings,
+    requireAdminSession,
+    resolveAdminListTenantId,
+} from "@/app/lib/serverAdminAuth"
 
-const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 const BUCKET = "tenant-logos"
 
@@ -31,7 +32,6 @@ function extFromFilename(name: string | null | undefined) {
 }
 
 async function ensureBucket() {
-    // Bucket が無い場合は作る（多重実行でも落ちないように）
     try {
         await supabase.storage.getBucket(BUCKET)
         return
@@ -42,7 +42,6 @@ async function ensureBucket() {
     try {
         await supabase.storage.createBucket(BUCKET, { public: true })
     } catch (e) {
-        // bucket を作れないなら処理続行できない
         throw e
     }
 }
@@ -54,28 +53,52 @@ async function resolveLogoUrl(path: string) {
     return data.publicUrl || null
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
+    if (!canManageTenantSettings(auth.access, tenantId)) {
+        return NextResponse.json({ error: "ロゴを閲覧する権限がありません" }, { status: 403 })
+    }
+
     const { data: tenant, error } = await supabase
         .from("tenants")
         .select("logo_path")
-        .eq("id", DEFAULT_TENANT_ID)
+        .eq("id", tenantId)
         .maybeSingle()
 
     if (error) {
         if (isMissingLogoColumn(error)) {
-            return NextResponse.json({ logoPath: null, logoUrl: null })
+            return NextResponse.json({ logoPath: null, logoUrl: null, tenantId })
         }
         return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     const logoPath = tenant?.logo_path as string | null
-    if (!logoPath) return NextResponse.json({ logoPath: null, logoUrl: null })
+    if (!logoPath) return NextResponse.json({ logoPath: null, logoUrl: null, tenantId })
 
     const logoUrl = await resolveLogoUrl(logoPath)
-    return NextResponse.json({ logoPath, logoUrl })
+    return NextResponse.json({ logoPath, logoUrl, tenantId })
 }
 
 export async function POST(req: NextRequest) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
+    if (!canManageTenantSettings(auth.access, tenantId)) {
+        return NextResponse.json({ error: "ロゴを変更する権限がありません" }, { status: 403 })
+    }
+
     try {
         await ensureBucket()
     } catch (e) {
@@ -92,7 +115,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "file をアップロードしてください" }, { status: 400 })
     }
 
-    const maxBytes = 5 * 1024 * 1024 // 5MB
+    const maxBytes = 5 * 1024 * 1024
     if (file.size > maxBytes) {
         return NextResponse.json({ error: "ファイルサイズが大きすぎます（5MB以下にしてください）" }, { status: 400 })
     }
@@ -107,7 +130,6 @@ export async function POST(req: NextRequest) {
     }
 
     const ext = extFromFilename(file.name) || mimeToExt(file.type)
-    const tenantId = DEFAULT_TENANT_ID
     const logoPath = `${tenantId}/logo.${ext}`
 
     const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(logoPath, file, {
@@ -136,11 +158,21 @@ export async function POST(req: NextRequest) {
     }
 
     const logoUrl = await resolveLogoUrl(logoPath)
-    return NextResponse.json({ logoPath, logoUrl })
+    return NextResponse.json({ logoPath, logoUrl, tenantId })
 }
 
-export async function DELETE() {
-    const tenantId = DEFAULT_TENANT_ID
+export async function DELETE(req: NextRequest) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
+    if (!canManageTenantSettings(auth.access, tenantId)) {
+        return NextResponse.json({ error: "ロゴを変更する権限がありません" }, { status: 403 })
+    }
 
     const { data: tenant, error } = await supabase
         .from("tenants")
@@ -174,4 +206,3 @@ export async function DELETE() {
 
     return NextResponse.json({ ok: true })
 }
-

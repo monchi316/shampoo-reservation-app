@@ -23,6 +23,9 @@ export type SchedulingSettings = {
     uniform_close: string | null
     avg_service_minutes_per_car: number
     avg_travel_minutes: number
+    /** 予約受付の最短リードタイム（今から何日/何時間後以降を受け付けるか） */
+    booking_lead_days: number
+    booking_lead_hours: number
 }
 
 export function timeStrToMinutes(t: string | null | undefined): number | null {

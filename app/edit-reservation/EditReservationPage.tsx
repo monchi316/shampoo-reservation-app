@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import StepForm from "../components/StepForm"
 import TenantLogo from "../components/TenantLogo"
+import { setTenantContextToStorage } from "../lib/tenantClient"
 
 type FormData = {
     cars: Array<{
@@ -11,6 +12,7 @@ type FormData = {
         model: string
         size: string
         isManualCar: boolean
+        selectedAddonSlugs: string[]
     }>
     interior: boolean
     date: string
@@ -27,6 +29,7 @@ export default function EditReservationPage() {
     const searchParams = useSearchParams()
     const reservationId = searchParams.get("id")
     const groupIdParam = searchParams.get("groupId")
+    const tenantIdParam = searchParams.get("tenantId")
     // StepFormの表示ステップ
     const [step, setStep] = useState(1)
     // 初期データ取得中フラグ
@@ -38,7 +41,7 @@ export default function EditReservationPage() {
     const [targetGroupId, setTargetGroupId] = useState<string>("")
     // 編集フォームの入力状態
     const [formData, setFormData] = useState<FormData>({
-        cars: [{ maker: "", model: "", size: "", isManualCar: false }],
+        cars: [{ maker: "", model: "", size: "", isManualCar: false, selectedAddonSlugs: [] }],
         interior: false,
         date: "",
         time: "",
@@ -51,6 +54,9 @@ export default function EditReservationPage() {
 
     useEffect(() => {
         const fetchReservation = async () => {
+            if (tenantIdParam) {
+                setTenantContextToStorage({ tenantId: tenantIdParam, liffId: null })
+            }
             if (!reservationId && !groupIdParam) {
                 setLoading(false)
                 return
@@ -60,7 +66,7 @@ export default function EditReservationPage() {
             let rows: any[] = []
             if (groupIdParam) {
                 const res = await fetch(
-                    `/api/public/reservations?groupId=${encodeURIComponent(groupIdParam)}`
+                    `/api/public/reservations?groupId=${encodeURIComponent(groupIdParam)}&tenantId=${encodeURIComponent(tenantIdParam || "")}`
                 )
                 const json = await res.json().catch(() => ({}))
                 if (!res.ok || !Array.isArray(json.data) || json.data.length === 0) {
@@ -72,7 +78,7 @@ export default function EditReservationPage() {
                 firstRow = json.data[0]
             } else {
                 const res = await fetch(
-                    `/api/public/reservations?id=${encodeURIComponent(reservationId!)}`
+                    `/api/public/reservations?id=${encodeURIComponent(reservationId!)}&tenantId=${encodeURIComponent(tenantIdParam || "")}`
                 )
                 const json = await res.json().catch(() => ({}))
                 if (!res.ok || !Array.isArray(json.data) || json.data.length === 0) {
@@ -121,6 +127,11 @@ export default function EditReservationPage() {
                     model: r.model || "",
                     size: r.size || "",
                     isManualCar: false,
+                    selectedAddonSlugs: Array.isArray(r.addon_slugs)
+                        ? r.addon_slugs.filter((x: unknown): x is string => typeof x === "string")
+                        : r.interior
+                          ? ["interior_addon"]
+                          : [],
                 })),
                 interior: !!firstRow.interior,
                 date: firstRow.date || "",
@@ -136,7 +147,7 @@ export default function EditReservationPage() {
 
         // ページ表示時に1回だけ読み込む（id変更時は再読み込み）。
         fetchReservation()
-    }, [reservationId, groupIdParam])
+    }, [reservationId, groupIdParam, tenantIdParam])
 
     if (!reservationId && !groupIdParam) {
         return <div className="p-4 text-center">予約IDが見つかりません</div>

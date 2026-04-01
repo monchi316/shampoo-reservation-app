@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { menusToPriceMap, priceForOneCar } from "@/app/lib/menuPricing"
 import { googleMapsNavigationUrl, RESERVATION_STATUS_OPTIONS } from "../../lib/reservationStatus"
+import { useAdminTenant } from "../../adminTenantContext"
 
 type Reservation = {
     id: string
@@ -23,9 +24,11 @@ type Reservation = {
     memo?: string | null
     staff_name?: string | null
     interior?: boolean | null
+    addon_slugs?: string[] | null
 }
 
 export default function AdminReservationDetailPage() {
+    const { tenantId: adminTenantId, ready: adminReady } = useAdminTenant()
     const params = useParams<{ id: string }>()
     const router = useRouter()
     const id = params.id
@@ -53,22 +56,44 @@ export default function AdminReservationDetailPage() {
     })
 
     useEffect(() => {
-        fetch("/api/public/tenant-config")
+        if (!adminReady || !adminTenantId) return
+        fetch(`/api/public/tenant-config?tenantId=${encodeURIComponent(adminTenantId)}`)
             .then((r) => r.json())
             .then((j) => {
                 const m = menusToPriceMap(j?.menus || [])
                 if (Object.keys(m).length > 0) setMenuPrices(m)
             })
             .catch(() => {})
-    }, [])
+    }, [adminReady, adminTenantId])
 
     const calcDefaultSalesForRows = (targetRows: Reservation[]) =>
-        targetRows.reduce((sum, r) => sum + priceForOneCar(r.size, !!r.interior, menuPrices), 0)
+        targetRows.reduce(
+            (sum, r) =>
+                sum +
+                priceForOneCar(
+                    r.size,
+                    Array.isArray(r.addon_slugs)
+                        ? r.addon_slugs
+                        : r.interior
+                          ? ["interior_addon"]
+                          : [],
+                    menuPrices
+                ),
+            0
+        )
 
     const lineSalesForRow = (row: Reservation): number => {
         const hasSaved = row.sales_amount !== null && row.sales_amount !== undefined
         if (hasSaved) return Number(row.sales_amount)
-        return priceForOneCar(row.size, !!row.interior, menuPrices)
+        return priceForOneCar(
+            row.size,
+            Array.isArray(row.addon_slugs)
+                ? row.addon_slugs
+                : row.interior
+                  ? ["interior_addon"]
+                  : [],
+            menuPrices
+        )
     }
 
     /** フォーム表示の基準にしている「一覧順で最初の選択車」が変わったときだけ hydrate する */

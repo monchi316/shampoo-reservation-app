@@ -3,12 +3,19 @@ import { lineMessagingPush } from "@/app/lib/linePush"
 
 export async function POST(req: Request) {
     try {
-        const { userId, message } = await req.json()
+        const { tenantId, userId, message, kind, reservationGroupId } = await req.json()
 
+        console.log("🏪 tenant:", tenantId)
         console.log("📨 送信先:", userId)
         console.log("💬 メッセージ:", message)
 
-        const { ok, status, lineBody } = await lineMessagingPush(String(userId || ""), String(message || ""))
+        const { ok, status, lineBody } = await lineMessagingPush({
+            tenantId: String(tenantId || ""),
+            toUserId: String(userId || ""),
+            text: String(message || ""),
+            kind: kind || "test",
+            reservationGroupId: reservationGroupId || null,
+        })
 
         console.log("📡 LINEレスポンス:", lineBody)
 

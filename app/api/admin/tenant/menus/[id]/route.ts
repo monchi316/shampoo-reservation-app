@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import { canAccessTenant, canManageTenantSettings, requireAdminSession } from "@/app/lib/serverAdminAuth"
 
-const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 type Params = { params: Promise<{ id: string }> }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
     const { id } = await params
     const body = await req.json().catch(() => ({}))
     const patch: Record<string, unknown> = {}
@@ -34,8 +34,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         .eq("id", id)
         .single()
 
-    if (fetchErr || !row || row.tenant_id !== DEFAULT_TENANT_ID) {
+    if (fetchErr || !row) {
         return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+    const rowTenant = row.tenant_id as string
+    if (!canAccessTenant(auth.access, rowTenant)) {
+        return NextResponse.json({ error: "この店舗へのアクセスは許可されていません" }, { status: 403 })
     }
 
     const { data, error } = await supabase
@@ -49,7 +53,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ data })
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
     const { id } = await params
     const { data: row } = await supabase
         .from("service_menu_items")
@@ -57,8 +64,15 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
         .eq("id", id)
         .single()
 
-    if (!row || row.tenant_id !== DEFAULT_TENANT_ID) {
+    if (!row) {
         return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+    const tid = row.tenant_id as string
+    if (!canAccessTenant(auth.access, tid)) {
+        return NextResponse.json({ error: "この店舗へのアクセスは許可されていません" }, { status: 403 })
+    }
+    if (!canManageTenantSettings(auth.access, tid)) {
+        return NextResponse.json({ error: "メニューを編集する権限がありません" }, { status: 403 })
     }
 
     const { error } = await supabase.from("service_menu_items").delete().eq("id", id)

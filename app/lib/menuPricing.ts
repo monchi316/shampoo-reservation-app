@@ -12,20 +12,19 @@ export function menusToPriceMap(items: MenuItemPublic[]): Record<string, number>
 
 export function priceForOneCar(
     size: string | null | undefined,
-    interior: boolean,
+    addonSlugs: string[] | null | undefined,
     prices: Record<string, number>
 ): number {
     const s = (size || "").toUpperCase()
     const key = `size_${s.toLowerCase()}`
     const base = prices[key] ?? 0
-    const addon = interior ? (prices.interior_addon ?? 0) : 0
+    const addon = (addonSlugs || []).reduce((sum, slug) => sum + (prices[slug] ?? 0), 0)
     return base + addon
 }
 
 export function totalForCars(
-    cars: { size?: string | null }[],
-    interior: boolean,
+    cars: { size?: string | null; selectedAddonSlugs?: string[] | null }[],
     prices: Record<string, number>
 ): number {
-    return cars.reduce((sum, c) => sum + priceForOneCar(c.size, interior, prices), 0)
+    return cars.reduce((sum, c) => sum + priceForOneCar(c.size, c.selectedAddonSlugs, prices), 0)
 }

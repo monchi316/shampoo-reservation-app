@@ -1,14 +1,48 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import {
+    canManageTenantSettings,
+    requireAdminSession,
+    resolveAdminListTenantId,
+} from "@/app/lib/serverAdminAuth"
 
-const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
+function generateBaseSlugFromLabel(label: string): string {
+    const ascii = label
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+    return ascii || "menu_item"
+}
+
+async function resolveUniqueSlug(tenantId: string, base: string): Promise<string> {
+    for (let i = 0; i < 200; i++) {
+        const candidate = i === 0 ? base : `${base}_${i + 1}`
+        const { data, error } = await supabase
+            .from("service_menu_items")
+            .select("id")
+            .eq("tenant_id", tenantId)
+            .eq("slug", candidate)
+            .maybeSingle()
+        if (error) throw error
+        if (!data) return candidate
+    }
+    return `${base}_${Date.now()}`
+}
 
 export async function GET(req: NextRequest) {
-    const tenantId = req.nextUrl.searchParams.get("tenantId") || DEFAULT_TENANT_ID
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
     const { data, error } = await supabase
         .from("service_menu_items")
         .select("*")
@@ -20,20 +54,28 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-    const tenantId = DEFAULT_TENANT_ID
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
+    if (!canManageTenantSettings(auth.access, tenantId)) {
+        return NextResponse.json({ error: "メニューを編集する権限がありません" }, { status: 403 })
+    }
+
     const body = await req.json().catch(() => ({}))
-    const slug = String(body?.slug || "").trim()
     const label = String(body?.label || "").trim()
     const price = Number(body?.price)
     const sort_order = body?.sort_order != null ? Number(body.sort_order) : 0
 
-    if (!slug || !/^[a-z0-9_]+$/.test(slug)) {
-        return NextResponse.json({ error: "slug は英小文字・数字・アンダースコアのみ" }, { status: 400 })
-    }
     if (!label) return NextResponse.json({ error: "label が必要です" }, { status: 400 })
     if (!Number.isFinite(price) || price < 0) {
         return NextResponse.json({ error: "price が不正です" }, { status: 400 })
     }
+    const slug = await resolveUniqueSlug(tenantId, generateBaseSlugFromLabel(label))
 
     const { data, error } = await supabase
         .from("service_menu_items")

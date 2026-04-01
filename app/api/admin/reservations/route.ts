@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
+import { requireAdminSession, resolveAdminListTenantId } from "@/app/lib/serverAdminAuth"
 
-const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 export async function GET(req: NextRequest) {
+    const auth = await requireAdminSession(req)
+    if (!auth.ok) return auth.response
+
+    const explicit = req.nextUrl.searchParams.get("tenantId")
+    const resolved = await resolveAdminListTenantId(auth.supabase, auth.access, explicit)
+    if (!resolved.ok) return resolved.response
+    const tenantId = resolved.tenantId
+
     const searchParams = req.nextUrl.searchParams
     const date = searchParams.get("date")
     const status = searchParams.get("status")
@@ -16,7 +21,7 @@ export async function GET(req: NextRequest) {
     let query = supabase
         .from("reservations")
         .select("*")
-        .eq("tenant_id", DEFAULT_TENANT_ID)
+        .eq("tenant_id", tenantId)
         .order("date", { ascending: true })
         .order("time", { ascending: true })
         .limit(500)

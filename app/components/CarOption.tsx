@@ -9,6 +9,7 @@ const toKatakana = (str: string) => {
 
 import { useEffect, useState } from "react"
 import { supabase } from "../lib/supabase"
+import { buildTenantQueryParam, getTenantContextFromStorage } from "../lib/tenantClient"
 
 export default function CarOption({ setStep, formData, setFormData }: any) {
     // DBから取得した車種マスタ
@@ -17,6 +18,7 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
     const [suggestions, setSuggestions] = useState<any[]>([])
     // メーカー候補
     const [makerSuggestions, setMakerSuggestions] = useState<string[]>([])
+    const [optionMenus, setOptionMenus] = useState<Array<{ slug: string; label: string }>>([])
 
     // 初回表示時に、carsテーブルから候補データを読み込む。
     useEffect(() => {
@@ -31,17 +33,51 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
 
     }, [])
 
+    useEffect(() => {
+        const loadOptions = async () => {
+            const tenantCtx = getTenantContextFromStorage()
+            if (!tenantCtx?.tenantId) return
+            const res = await fetch(`/api/public/tenant-config?${buildTenantQueryParam(tenantCtx.tenantId)}`)
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok) return
+            const options = Array.isArray(json?.menus)
+                ? json.menus
+                      .filter(
+                          (m: any) =>
+                              m?.active !== false &&
+                              typeof m?.slug === "string" &&
+                              typeof m?.label === "string" &&
+                              !String(m.slug).startsWith("size_")
+                      )
+                      .map((m: any) => ({ slug: String(m.slug), label: String(m.label) }))
+                : []
+            setOptionMenus(options)
+        }
+        void loadOptions()
+    }, [])
+
     const updateCarAt = (index: number, patch: any) => {
         const nextCars = [...(formData.cars || [])]
-        nextCars[index] = { ...nextCars[index], ...patch }
-        setFormData({ ...formData, cars: nextCars })
+        const current = nextCars[index] || {}
+        nextCars[index] = {
+            ...current,
+            selectedAddonSlugs: Array.isArray(current.selectedAddonSlugs) ? current.selectedAddonSlugs : [],
+            ...patch,
+        }
+        const anyInterior = nextCars.some((c: any) =>
+            Array.isArray(c?.selectedAddonSlugs) ? c.selectedAddonSlugs.includes("interior_addon") : false
+        )
+        setFormData({ ...formData, cars: nextCars, interior: anyInterior })
     }
 
     const addCar = () => {
         if ((formData.cars || []).length >= 3) return
         setFormData({
             ...formData,
-            cars: [...(formData.cars || []), { maker: "", model: "", size: "", isManualCar: false }],
+            cars: [
+                ...(formData.cars || []),
+                { maker: "", model: "", size: "", isManualCar: false, selectedAddonSlugs: [] },
+            ],
         })
     }
 
@@ -49,7 +85,10 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
         const nextCars = (formData.cars || []).filter((_: any, i: number) => i !== index)
         setFormData({
             ...formData,
-            cars: nextCars.length > 0 ? nextCars : [{ maker: "", model: "", size: "", isManualCar: false }],
+            cars:
+                nextCars.length > 0
+                    ? nextCars
+                    : [{ maker: "", model: "", size: "", isManualCar: false, selectedAddonSlugs: [] }],
         })
     }
 
@@ -102,6 +141,9 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
             model: car.model,
             size: car.size,
             isManualCar: false,
+            selectedAddonSlugs: Array.isArray(formData.cars?.[index]?.selectedAddonSlugs)
+                ? formData.cars[index].selectedAddonSlugs
+                : [],
         })
         setSuggestions([])
     }
@@ -179,6 +221,39 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
                         <option value="M">M</option>
                         <option value="L">L</option>
                     </select>
+
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">オプション（車両ごと）</p>
+                        {optionMenus.length === 0 ? (
+                            <p className="text-xs text-slate-500">利用可能なオプションはありません</p>
+                        ) : (
+                            <div className="space-y-1">
+                                {optionMenus.map((opt) => {
+                                    const selected = Array.isArray(carItem.selectedAddonSlugs)
+                                        ? carItem.selectedAddonSlugs.includes(opt.slug)
+                                        : false
+                                    return (
+                                        <label key={`${index}-${opt.slug}`} className="flex items-center gap-2 text-sm">
+                                            <input
+                                                type="checkbox"
+                                                checked={selected}
+                                                onChange={(e) => {
+                                                    const prev = Array.isArray(carItem.selectedAddonSlugs)
+                                                        ? carItem.selectedAddonSlugs
+                                                        : []
+                                                    const next = e.target.checked
+                                                        ? Array.from(new Set([...prev, opt.slug]))
+                                                        : prev.filter((s: string) => s !== opt.slug)
+                                                    updateCarAt(index, { selectedAddonSlugs: next })
+                                                }}
+                                            />
+                                            {opt.label}
+                                        </label>
+                                    )
+                                })}
+                            </div>
+                        )}
+                    </div>
                 </div>
             ))}
 
@@ -191,18 +266,6 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
                     + 車両を追加（最大3台）
                 </button>
             )}
-
-            <label className="mb-4 block rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                <input
-                    type="checkbox"
-                    checked={formData.interior}
-                    onChange={(e) =>
-                        setFormData({ ...formData, interior: e.target.checked })
-                    }
-                    className="mr-2 align-middle"
-                />
-                内装清掃あり
-            </label>
 
             <button
                 onClick={() => setStep(2)}

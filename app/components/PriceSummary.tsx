@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { menusToPriceMap, totalForCars } from "../lib/menuPricing"
 import { supabase } from "../lib/supabase"
-
-const CLIENT_DEFAULT_TENANT_ID =
-    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEFAULT_TENANT_ID) ||
-    "00000000-0000-4000-8000-000000000001"
+import { buildTenantQueryParam, getTenantContextFromStorage } from "../lib/tenantClient"
 
 const FALLBACK_MENU_PRICES: Record<string, number> = {
     size_s: 8000,
@@ -30,7 +27,9 @@ export default function PriceSummary({
     const [menuPrices, setMenuPrices] = useState<Record<string, number>>(FALLBACK_MENU_PRICES)
 
     useEffect(() => {
-        fetch("/api/public/tenant-config")
+        const tenantCtx = getTenantContextFromStorage()
+        if (!tenantCtx?.tenantId) return
+        fetch(`/api/public/tenant-config?${buildTenantQueryParam(tenantCtx.tenantId)}`)
             .then((r) => r.json())
             .then((j) => {
                 const map = menusToPriceMap(j?.menus || [])
@@ -39,10 +38,7 @@ export default function PriceSummary({
             .catch(() => { })
     }, [])
 
-    const total = useMemo(
-        () => totalForCars(cars, !!formData.interior, menuPrices),
-        [cars, formData.interior, menuPrices]
-    )
+    const total = useMemo(() => totalForCars(cars, menuPrices), [cars, menuPrices])
 
     const handleReserve = async () => {
         // Current LINE user (for new reservation flow).
@@ -55,12 +51,17 @@ export default function PriceSummary({
             alert("LINEユーザーIDが取得できませんでした。再ログイン後にお試しください。")
             return
         }
+        const tenantCtx = getTenantContextFromStorage()
+        if (!tenantCtx?.tenantId) {
+            alert("店舗情報が見つかりません。予約画面を開き直してください。")
+            return
+        }
 
         const availBody: Record<string, unknown> = {
             date: formData.date,
             time: formData.time,
             numCars: cars.length,
-            tenantId: CLIENT_DEFAULT_TENANT_ID,
+            tenantId: tenantCtx.tenantId,
         }
         if (mode === "update" && targetGroupId) {
             availBody.excludeGroupId = targetGroupId
@@ -99,7 +100,10 @@ export default function PriceSummary({
                     date: formData.date,
                     time: formData.time,
                     address: formData.address,
-                    interior: !!formData.interior,
+                    interior: Array.isArray(car.selectedAddonSlugs)
+                        ? car.selectedAddonSlugs.includes("interior_addon")
+                        : false,
+                    addon_slugs: Array.isArray(car.selectedAddonSlugs) ? car.selectedAddonSlugs : [],
                 }))
 
                 const res = await fetch("/api/public/reservations", {
@@ -109,6 +113,7 @@ export default function PriceSummary({
                         action: "replace_group",
                         group_id: targetGroupId,
                         rows: payload,
+                        tenantId: tenantCtx.tenantId,
                     }),
                 })
                 const json = await res.json().catch(() => ({}))
@@ -132,6 +137,7 @@ export default function PriceSummary({
                     body: JSON.stringify({
                         action: "update_one",
                         reservation_id: reservationId,
+                        tenantId: tenantCtx.tenantId,
                         fields: {
                             user_name: lineUserName,
                             maker: firstCar.maker,
@@ -140,7 +146,12 @@ export default function PriceSummary({
                             date: formData.date,
                             time: formData.time,
                             address: formData.address,
-                            interior: !!formData.interior,
+                            interior: Array.isArray(firstCar.selectedAddonSlugs)
+                                ? firstCar.selectedAddonSlugs.includes("interior_addon")
+                                : false,
+                            addon_slugs: Array.isArray(firstCar.selectedAddonSlugs)
+                                ? firstCar.selectedAddonSlugs
+                                : [],
                         },
                     }),
                 })
@@ -168,12 +179,15 @@ export default function PriceSummary({
                 date: formData.date,
                 time: formData.time,
                 address: formData.address,
-                interior: !!formData.interior,
+                interior: Array.isArray(car.selectedAddonSlugs)
+                    ? car.selectedAddonSlugs.includes("interior_addon")
+                    : false,
+                addon_slugs: Array.isArray(car.selectedAddonSlugs) ? car.selectedAddonSlugs : [],
             }))
             const res = await fetch("/api/public/reservations", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "insert", rows: payload }),
+                body: JSON.stringify({ action: "insert", rows: payload, tenantId: tenantCtx.tenantId }),
             })
             const json = await res.json().catch(() => ({}))
             if (!res.ok || !Array.isArray(json.data) || json.data.length === 0) {
@@ -262,8 +276,9 @@ export default function PriceSummary({
         }
 
         // Build action links included in LINE message.
-        const cancelUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/cancel-reservation?id=${currentReservationId}&groupId=${currentGroupId}`
-        const editUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/edit-reservation?id=${currentReservationId}&groupId=${currentGroupId}`
+        const tenantQuery = buildTenantQueryParam(tenantCtx.tenantId)
+        const cancelUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/cancel-reservation?id=${currentReservationId}&groupId=${currentGroupId}&${tenantQuery}`
+        const editUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/edit-reservation?id=${currentReservationId}&groupId=${currentGroupId}&${tenantQuery}`
 
         // Send LINE push through server API route.
 
@@ -273,7 +288,10 @@ export default function PriceSummary({
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
+                tenantId: tenantCtx.tenantId,
                 userId: lineUserId,
+                kind: mode === "update" ? "reservation_updated" : "reservation_created",
+                reservationGroupId: currentGroupId || null,
                 message:
                     mode === "update"
                         ? `予約内容を変更しました🛠️
