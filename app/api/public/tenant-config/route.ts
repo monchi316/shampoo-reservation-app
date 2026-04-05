@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
 import { ensureTenantExists, normalizeTenantId } from "@/app/lib/serverTenantResolver"
+import {
+    defaultFeaturePayload,
+    FEATURE_VEHICLE_COLOR_PLATE,
+    getTenantFeatureMap,
+} from "@/app/lib/tenantFeatures"
 
 const supabase = createClient(
     process.env.SUPABASE_URL!,
@@ -61,10 +66,17 @@ export async function GET(req: NextRequest) {
     const logoPath = tenantRow?.logo_path as string | null | undefined
     const logoUrl = logoPath ? await resolveLogoUrl(logoPath) : null
 
+    const featureMap = await getTenantFeatureMap(supabase, tenantId)
+    const featureDefaults = defaultFeaturePayload()
+
     return NextResponse.json({
         tenantId,
         menus: menus || [],
         logoUrl,
         scheduling: sched || null,
+        features: {
+            ...featureDefaults,
+            [FEATURE_VEHICLE_COLOR_PLATE]: featureMap[FEATURE_VEHICLE_COLOR_PLATE] === true,
+        },
     })
 }

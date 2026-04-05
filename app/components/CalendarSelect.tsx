@@ -136,7 +136,7 @@ export default function CalendarSelect({
             return
         }
         if (carsCount === 0) {
-            alert("先に車両情報を入力してください。")
+            alert("先にお車情報を入力してください。")
             setStep(1)
             return
         }
@@ -182,7 +182,7 @@ export default function CalendarSelect({
                 営業時間と既存予約・移動時間を考慮し、この日時で予約可能か確認してから次へ進みます。
             </p>
             <p className="mb-2 text-xs text-slate-500">
-                入力済み車両台数: {carsCount} 台
+                お車の台数: {carsCount} 台
             </p>
 
             <input
@@ -216,7 +216,7 @@ export default function CalendarSelect({
                     </>
                 ) : candidateTimes.length === 0 ? (
                     <p className="text-sm text-slate-600">
-                        日付を選ぶと候補が表示されます（車両情報入力後）。
+                        日付を選ぶと候補が表示されます。
                     </p>
                 ) : (
                     <div className="flex flex-wrap gap-2">
@@ -225,11 +225,10 @@ export default function CalendarSelect({
                                 key={t}
                                 type="button"
                                 onClick={() => setFormData({ ...formData, time: t })}
-                                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
-                                    formData.time === t
+                                className={`rounded-full px-3 py-1.5 text-sm font-medium ${formData.time === t
                                         ? "bg-indigo-600 text-white"
                                         : "bg-white text-slate-800 border border-slate-300 hover:bg-slate-100"
-                                }`}
+                                    }`}
                             >
                                 {t}
                             </button>

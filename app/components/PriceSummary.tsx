@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { menusToPriceMap, totalForCars } from "../lib/menuPricing"
 import { supabase } from "../lib/supabase"
 import { buildTenantQueryParam, getTenantContextFromStorage } from "../lib/tenantClient"
@@ -11,6 +11,11 @@ const FALLBACK_MENU_PRICES: Record<string, number> = {
     size_l: 10000,
     interior_addon: 3000,
 }
+// 同意文書の版。規約/ポリシーを更新したら更新し、端末側の再同意を促す。
+const AGREEMENT_DOC_VERSION = "20260403"
+const AGREEMENT_STORAGE_KEY = `sukima_agreement_v1_${AGREEMENT_DOC_VERSION}`
+const PRIVACY_URL = "/privacy"
+const TERMS_URL = "/terms"
 
 export default function PriceSummary({
     formData,
@@ -19,28 +24,60 @@ export default function PriceSummary({
     targetUserId,
     targetUserName,
     targetGroupId,
+    tenantId: tenantIdProp,
 }: any) {
     const cars = (formData.cars || []).filter(
         (c: any) => c.maker && c.model && c.size
     )
 
     const [menuPrices, setMenuPrices] = useState<Record<string, number>>(FALLBACK_MENU_PRICES)
+    const [vehicleColorPlateEnabled, setVehicleColorPlateEnabled] = useState(false)
+    const submittingRef = useRef(false)
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    /** 変更フローで一度成功したら、再押下で通知が重複しないようロック（再編集は画面の再読み込み） */
+    const [changeCompleted, setChangeCompleted] = useState(false)
+
+    // 同意（この端末では省略）
+    const [agreed, setAgreed] = useState(false)
 
     useEffect(() => {
-        const tenantCtx = getTenantContextFromStorage()
-        if (!tenantCtx?.tenantId) return
-        fetch(`/api/public/tenant-config?${buildTenantQueryParam(tenantCtx.tenantId)}`)
+        try {
+            const v = window.localStorage.getItem(AGREEMENT_STORAGE_KEY)
+            if (v === "1") setAgreed(true)
+        } catch {
+            // localStorage が使えない環境でも画面は動くよう握りつぶす
+        }
+    }, [])
+
+    useEffect(() => {
+        const fromProp =
+            typeof tenantIdProp === "string" && tenantIdProp.trim().length > 0
+                ? tenantIdProp.trim()
+                : null
+        const id = fromProp || getTenantContextFromStorage()?.tenantId
+        if (!id) return
+        fetch(`/api/public/tenant-config?${buildTenantQueryParam(id)}`)
             .then((r) => r.json())
             .then((j) => {
                 const map = menusToPriceMap(j?.menus || [])
                 if (Object.keys(map).length > 0) setMenuPrices(map)
+                setVehicleColorPlateEnabled(j?.features?.vehicle_color_plate === true)
             })
             .catch(() => { })
-    }, [])
+    }, [tenantIdProp])
 
     const total = useMemo(() => totalForCars(cars, menuPrices), [cars, menuPrices])
 
     const handleReserve = async () => {
+        if (!agreed) {
+            alert("利用規約およびプライバシーポリシーに同意してください。")
+            return
+        }
+        if (mode === "update" && changeCompleted) return
+        if (submittingRef.current) return
+        submittingRef.current = true
+        setIsSubmitting(true)
+        try {
         // Current LINE user (for new reservation flow).
         const profile = JSON.parse(localStorage.getItem("user") || "{}")
         const lineUserId = profile.userId || targetUserId
@@ -79,12 +116,32 @@ export default function PriceSummary({
             return
         }
 
+        if (vehicleColorPlateEnabled) {
+            const missing = cars.some(
+                (car: { vehicleColorAbbr?: string; vehiclePlate?: string }) =>
+                    !String(car.vehicleColorAbbr ?? "").trim() ||
+                    !String(car.vehiclePlate ?? "").trim()
+            )
+            if (missing) {
+                alert("各お車の色（略称）とナンバーを入力してください。")
+                return
+            }
+        }
+
+        const vehiclePayload = (car: {
+            vehicleColorAbbr?: string
+            vehiclePlate?: string
+        }) => ({
+            vehicle_color_abbr: String(car.vehicleColorAbbr ?? "").trim(),
+            vehicle_plate: String(car.vehiclePlate ?? "").trim(),
+        })
+
         let currentReservationId = reservationId
         let currentGroupId = targetGroupId || ""
         if (mode === "update") {
             // Update existing reservation.
             if (cars.length === 0) {
-                alert("車両情報が不足しています")
+                alert("お車情報が不足しています")
                 return
             }
 
@@ -104,6 +161,7 @@ export default function PriceSummary({
                         ? car.selectedAddonSlugs.includes("interior_addon")
                         : false,
                     addon_slugs: Array.isArray(car.selectedAddonSlugs) ? car.selectedAddonSlugs : [],
+                    ...vehiclePayload(car),
                 }))
 
                 const res = await fetch("/api/public/reservations", {
@@ -152,6 +210,7 @@ export default function PriceSummary({
                             addon_slugs: Array.isArray(firstCar.selectedAddonSlugs)
                                 ? firstCar.selectedAddonSlugs
                                 : [],
+                            ...vehiclePayload(firstCar),
                         },
                     }),
                 })
@@ -165,7 +224,7 @@ export default function PriceSummary({
         } else {
             // Create new reservation.
             if (cars.length === 0) {
-                alert("車両情報を入力してください")
+                alert("お車情報を入力してください")
                 return
             }
             currentGroupId = crypto.randomUUID()
@@ -183,6 +242,7 @@ export default function PriceSummary({
                     ? car.selectedAddonSlugs.includes("interior_addon")
                     : false,
                 addon_slugs: Array.isArray(car.selectedAddonSlugs) ? car.selectedAddonSlugs : [],
+                ...vehiclePayload(car),
             }))
             const res = await fetch("/api/public/reservations", {
                 method: "POST",
@@ -216,13 +276,18 @@ export default function PriceSummary({
                     model: car?.model || "",
                     size: car?.size || "",
                     isManualCar: !!car?.isManualCar,
+                    selectedAddonSlugs: Array.isArray(car?.selectedAddonSlugs)
+                        ? car.selectedAddonSlugs
+                        : [],
+                    vehicleColorAbbr: car?.vehicleColorAbbr || car?.vehicle_color_abbr || "",
+                    vehiclePlate: car?.vehiclePlate || car?.vehicle_plate || "",
                 })
 
                 const withHistory = [...cars, ...existingCars.map(normalize)]
                     .filter((car: any) => car.maker && car.model && car.size)
                     .reduce((acc: any[], car: any) => {
-                        const key = `${car.maker}__${car.model}__${car.size}`
-                        if (!acc.some((c) => `${c.maker}__${c.model}__${c.size}` === key)) {
+                        const key = `${car.maker}__${car.model}__${car.size}__${String(car.vehiclePlate || "").trim()}`
+                        if (!acc.some((c) => `${c.maker}__${c.model}__${c.size}__${String(c.vehiclePlate || "").trim()}` === key)) {
                             acc.push(car)
                         }
                         return acc
@@ -233,6 +298,16 @@ export default function PriceSummary({
         } catch (e) {
             console.error("既存cars取得エラー:", e)
         }
+
+        const carsForUserProfile = mergedCars.map((car: any) => ({
+            maker: String(car?.maker ?? ""),
+            model: String(car?.model ?? ""),
+            size: String(car?.size ?? ""),
+            isManualCar: !!car?.isManualCar,
+            selectedAddonSlugs: Array.isArray(car?.selectedAddonSlugs) ? car.selectedAddonSlugs : [],
+            vehicleColorAbbr: String(car?.vehicleColorAbbr ?? car?.vehicle_color_abbr ?? ""),
+            vehiclePlate: String(car?.vehiclePlate ?? car?.vehicle_plate ?? ""),
+        }))
 
         const userRes = await fetch("/api/users/profile", {
             method: "POST",
@@ -246,7 +321,7 @@ export default function PriceSummary({
                 model: cars[0]?.model || "",
                 size: cars[0]?.size || "",
                 address: formData.address,
-                cars: mergedCars,
+                cars: carsForUserProfile,
                 last_address: formData.address,
                 last_address_type: formData.addressType,
                 home_address: formData.homeAddress || null,
@@ -328,14 +403,21 @@ ${cancelUrl}
         const result = await res.json()
         console.log("📡 API結果:", result)
 
+        if (mode === "update") {
+            setChangeCompleted(true)
+        }
         alert(mode === "update" ? "予約を変更しました！" : "予約完了！")
+        } finally {
+            submittingRef.current = false
+            setIsSubmitting(false)
+        }
     }
 
     return (
         <div>
             <h2 className="mb-4 text-xl font-bold text-slate-900">予約確認</h2>
             <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/40 p-4">
-                <p className="mb-2 font-semibold text-slate-800">車両一覧</p>
+                <p className="mb-2 font-semibold text-slate-800">お車一覧</p>
                 {cars.map((car: any, i: number) => (
                     <p key={i} className="text-sm text-slate-700">
                         {i + 1}. {car.maker} {car.model}（{car.size}）
@@ -356,12 +438,69 @@ ${cancelUrl}
             </p>
             <p className="mt-2 text-lg font-bold text-indigo-700">料金: ¥{total.toLocaleString()}</p>
 
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/40 p-4 text-sm">
+                <label className="flex cursor-pointer items-start gap-2">
+                    <input
+                        type="checkbox"
+                        checked={agreed}
+                        onChange={(e) => {
+                            const next = e.target.checked
+                            setAgreed(next)
+                            if (next) {
+                                try {
+                                    window.localStorage.setItem(AGREEMENT_STORAGE_KEY, "1")
+                                } catch {
+                                    // 保存に失敗してもチェック状態だけは反映する
+                                }
+                            }
+                        }}
+                        className="mt-1 h-4 w-4 accent-indigo-600"
+                    />
+                    <span className="leading-relaxed">
+                        私は
+                        <a
+                            href={TERMS_URL}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-indigo-700 underline"
+                        >
+                            利用規約
+                        </a>
+                        および
+                        <a
+                            href={PRIVACY_URL}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-indigo-700 underline"
+                        >
+                            プライバシーポリシー
+                        </a>
+                        に同意のうえ、予約します。
+                    </span>
+                </label>
+            </div>
+
             <button
+                type="button"
+                disabled={isSubmitting || !agreed || (mode === "update" && changeCompleted)}
                 onClick={handleReserve}
-                className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white transition hover:bg-emerald-700"
+                className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
             >
-                {mode === "update" ? "変更を確定する" : "予約する"}
+                {isSubmitting
+                    ? "処理中…"
+                    : !agreed
+                      ? "利用規約への同意が必要です"
+                      : mode === "update" && changeCompleted
+                        ? "変更を反映しました"
+                        : mode === "update"
+                          ? "変更を確定する"
+                          : "予約する"}
             </button>
+            {mode === "update" && changeCompleted && (
+                <p className="mt-2 text-center text-xs text-slate-500">
+                    さらに内容を変える場合は、このページを再読み込みしてください。
+                </p>
+            )}
         </div>
     )
 }

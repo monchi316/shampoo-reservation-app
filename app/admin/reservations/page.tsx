@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminTenant } from "../adminTenantContext"
+import { adminVehicleColorPlateLine } from "@/app/lib/vehicleDisplay"
 import {
     googleMapsNavigationUrl,
     reservationStatusBadgeClass,
@@ -21,6 +22,8 @@ type Reservation = {
     time?: string | null
     address?: string | null
     status?: string | null
+    vehicle_color_abbr?: string | null
+    vehicle_plate?: string | null
 }
 
 export default function AdminReservationsPage() {
@@ -148,6 +151,9 @@ export default function AdminReservationsPage() {
                         {grouped.map((g) => {
                             const addr = (g.first.address || "").trim()
                             const navHref = addr ? googleMapsNavigationUrl(addr) : null
+                            const vehicleLines = g.rows
+                                .map((r) => adminVehicleColorPlateLine(r.vehicle_color_abbr, r.vehicle_plate))
+                                .filter((x): x is string => typeof x === "string" && x.length > 0)
                             return (
                             <div key={g.key} className="rounded-xl border border-slate-200 p-4">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -158,6 +164,13 @@ export default function AdminReservationsPage() {
                                         <p className="text-sm text-slate-800">
                                             {g.count}台 / {g.first.address || "住所なし"}
                                         </p>
+                                        {vehicleLines.length > 0 && (
+                                            <ul className="mt-1 list-inside list-disc text-xs text-slate-600">
+                                                {vehicleLines.map((line, i) => (
+                                                    <li key={i}>{line}</li>
+                                                ))}
+                                            </ul>
+                                        )}
                                         <p className="text-xs text-slate-600">
                                             group_id: {g.first.group_id || "-"}
                                         </p>

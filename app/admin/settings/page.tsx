@@ -92,6 +92,8 @@ export default function AdminSettingsPage() {
     const [lineTokenLast4, setLineTokenLast4] = useState<string | null>(null)
     const [lineConfigured, setLineConfigured] = useState(false)
     const [lineEncryptionReady, setLineEncryptionReady] = useState(true)
+    const [featureVehicleColorPlate, setFeatureVehicleColorPlate] = useState(false)
+    const [savingFeatures, setSavingFeatures] = useState(false)
 
     const loadMenus = useCallback(async () => {
         if (!tenantId) return
@@ -193,6 +195,14 @@ export default function AdminSettingsPage() {
         setLineChannelAccessToken("")
     }, [tenantId])
 
+    const loadFeatureFlags = useCallback(async () => {
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/feature-flags${adminTenantQs(tenantId)}`)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) return
+        setFeatureVehicleColorPlate(json?.flags?.vehicle_color_plate === true)
+    }, [tenantId])
+
     useEffect(() => {
         if (!ready) return
         if (!tenantId) {
@@ -203,10 +213,16 @@ export default function AdminSettingsPage() {
         }
         ;(async () => {
             setLoading(true)
-            await Promise.all([loadMenus(), loadScheduling(), loadLogo(), loadLineChannel()])
+            await Promise.all([
+                loadMenus(),
+                loadScheduling(),
+                loadLogo(),
+                loadLineChannel(),
+                loadFeatureFlags(),
+            ])
             setLoading(false)
         })()
-    }, [ready, tenantId, loadMenus, loadScheduling, loadLogo, loadLineChannel])
+    }, [ready, tenantId, loadMenus, loadScheduling, loadLogo, loadLineChannel, loadFeatureFlags])
 
     const uploadLogo = async () => {
         if (!logoFile) return
@@ -358,6 +374,28 @@ export default function AdminSettingsPage() {
         }
         setMsg("LINE通知設定を保存しました")
         await loadLineChannel()
+    }
+
+    const saveFeatureFlags = async () => {
+        setSavingFeatures(true)
+        setMsg("")
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/feature-flags${adminTenantQs(tenantId)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                tenantId,
+                flags: { vehicle_color_plate: featureVehicleColorPlate },
+            }),
+        })
+        const json = await res.json().catch(() => ({}))
+        setSavingFeatures(false)
+        if (!res.ok) {
+            setMsg(`機能フラグの保存に失敗: ${json?.error || ""}`)
+            return
+        }
+        setMsg("機能フラグを保存しました")
+        await loadFeatureFlags()
     }
 
     const updateWeekly = (i: number, patch: Partial<WeeklyRow>) => {
@@ -567,6 +605,38 @@ export default function AdminSettingsPage() {
                             </button>
                         </div>
                     </form>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h2 className="mb-3 text-lg font-semibold text-slate-900">機能フラグ（店舗別）</h2>
+                    <p className="mb-4 text-sm text-slate-600">
+                        この店舗だけに有効にしたいオプションを切り替えます。OFF
+                        のテナントでは予約フォームに項目が出ず、DBにも色・ナンバーは保存されません。
+                    </p>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                        <input
+                            type="checkbox"
+                            className="mt-1 size-4 rounded border-slate-400 text-indigo-600 focus:ring-indigo-500"
+                            checked={featureVehicleColorPlate}
+                            onChange={(e) => setFeatureVehicleColorPlate(e.target.checked)}
+                        />
+                        <span>
+                            <span className="font-semibold text-slate-900">
+                                車両ごとに色（略称）・ナンバーを入力させる
+                            </span>
+                            <span className="mt-1 block text-sm text-slate-600">
+                                管理画面の予約確認では、色は入力どおり・ナンバーは下4桁のみ表示します。
+                            </span>
+                        </span>
+                    </label>
+                    <button
+                        type="button"
+                        disabled={savingFeatures}
+                        onClick={() => void saveFeatureFlags()}
+                        className="mt-4 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                        {savingFeatures ? "保存中…" : "機能フラグを保存"}
+                    </button>
                 </section>
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

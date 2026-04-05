@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { menusToPriceMap, priceForOneCar } from "@/app/lib/menuPricing"
+import { adminVehicleColorPlateLine } from "@/app/lib/vehicleDisplay"
 import { googleMapsNavigationUrl, RESERVATION_STATUS_OPTIONS } from "../../lib/reservationStatus"
 import { useAdminTenant } from "../../adminTenantContext"
 
@@ -25,6 +26,8 @@ type Reservation = {
     staff_name?: string | null
     interior?: boolean | null
     addon_slugs?: string[] | null
+    vehicle_color_abbr?: string | null
+    vehicle_plate?: string | null
 }
 
 export default function AdminReservationDetailPage() {
@@ -358,7 +361,12 @@ export default function AdminReservationDetailPage() {
                         </div>
                     )}
                     <div className="space-y-2">
-                        {rows.map((row, idx) => (
+                        {rows.map((row, idx) => {
+                            const colorPlateLine = adminVehicleColorPlateLine(
+                                row.vehicle_color_abbr,
+                                row.vehicle_plate
+                            )
+                            return (
                             <div
                                 key={row.id}
                                 className={`flex items-start gap-3 rounded-lg border p-2.5 text-sm ${
@@ -378,10 +386,11 @@ export default function AdminReservationDetailPage() {
                                 ) : (
                                     <span className="w-4 shrink-0" aria-hidden />
                                 )}
-                                <span className="flex flex-1 flex-wrap items-baseline justify-between gap-2 font-medium text-slate-900">
-                                    <span>
-                                        {idx + 1}. {row.maker} {row.model}（{row.size}）
-                                    </span>
+                                <span className="flex flex-1 flex-col gap-0.5 font-medium text-slate-900">
+                                    <span className="flex flex-wrap items-baseline justify-between gap-2">
+                                        <span>
+                                            {idx + 1}. {row.maker} {row.model}（{row.size}）
+                                        </span>
                                     {rows.length > 1 && (
                                         <span className="text-sm font-semibold text-slate-800">
                                             ¥{lineSalesForRow(row).toLocaleString()}
@@ -392,9 +401,16 @@ export default function AdminReservationDetailPage() {
                                             </span>
                                         </span>
                                     )}
+                                    </span>
+                                    {colorPlateLine && (
+                                        <span className="text-xs font-normal text-slate-600">
+                                            {colorPlateLine}
+                                        </span>
+                                    )}
                                 </span>
                             </div>
-                        ))}
+                            )
+                        })}
                     </div>
                     <p className="mt-2 text-xs text-slate-600">group_id: {base.group_id || "-"}</p>
                 </div>

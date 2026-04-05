@@ -13,6 +13,8 @@ type FormData = {
         size: string
         isManualCar: boolean
         selectedAddonSlugs: string[]
+        vehicleColorAbbr: string
+        vehiclePlate: string
     }>
     interior: boolean
     date: string
@@ -39,9 +41,21 @@ export default function EditReservationPage() {
     // DBに保存されているユーザー名（更新通知や再保存で利用）
     const [targetUserName, setTargetUserName] = useState<string>("")
     const [targetGroupId, setTargetGroupId] = useState<string>("")
+    /** URL に無い場合でも予約行から確定させ、機能フラグ取得に使う */
+    const [resolvedTenantId, setResolvedTenantId] = useState<string>("")
     // 編集フォームの入力状態
     const [formData, setFormData] = useState<FormData>({
-        cars: [{ maker: "", model: "", size: "", isManualCar: false, selectedAddonSlugs: [] }],
+        cars: [
+            {
+                maker: "",
+                model: "",
+                size: "",
+                isManualCar: false,
+                selectedAddonSlugs: [],
+                vehicleColorAbbr: "",
+                vehiclePlate: "",
+            },
+        ],
         interior: false,
         date: "",
         time: "",
@@ -93,6 +107,14 @@ export default function EditReservationPage() {
             setTargetUserId(firstRow.user_id || "")
             setTargetUserName(firstRow.user_name || "")
             setTargetGroupId(firstRow.group_id || groupIdParam || "")
+            const tid =
+                (typeof tenantIdParam === "string" && tenantIdParam.length > 0
+                    ? tenantIdParam
+                    : firstRow.tenant_id) || ""
+            if (tid) {
+                setResolvedTenantId(tid)
+                setTenantContextToStorage({ tenantId: tid, liffId: null })
+            }
 
             // users テーブルから住所辞書（自宅/職場/その他）を取得
             let addressBook = {
@@ -132,6 +154,8 @@ export default function EditReservationPage() {
                         : r.interior
                           ? ["interior_addon"]
                           : [],
+                    vehicleColorAbbr: r.vehicle_color_abbr || "",
+                    vehiclePlate: r.vehicle_plate || "",
                 })),
                 interior: !!firstRow.interior,
                 date: firstRow.date || "",
@@ -174,6 +198,7 @@ export default function EditReservationPage() {
                 targetUserId={targetUserId}
                 targetUserName={targetUserName}
                 targetGroupId={targetGroupId}
+                tenantId={tenantIdParam || resolvedTenantId || null}
             />
         </div>
     )

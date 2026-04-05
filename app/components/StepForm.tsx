@@ -15,9 +15,24 @@ export default function StepForm({
     targetUserId,
     targetUserName,
     targetGroupId,
-}: any) {
+    /** 店舗確定後に渡すと、車種画面で機能フラグ・メニューを確実に再取得できる */
+    tenantId,
+}: {
+    step: number
+    setStep: (n: number) => void
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 予約フォーム全体のドラフトを共有
+    formData: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setFormData: any
+    mode?: "create" | "update"
+    reservationId?: string | null
+    targetUserId?: string
+    targetUserName?: string
+    targetGroupId?: string
+    tenantId?: string | null
+}) {
     const steps = [
-        { id: 1, label: "車両" },
+        { id: 1, label: "お車" },
         { id: 2, label: "日時" },
         { id: 3, label: "住所" },
         { id: 4, label: "確認" },
@@ -56,6 +71,7 @@ export default function StepForm({
                     setStep={setStep}
                     formData={formData}
                     setFormData={setFormData}
+                    tenantId={tenantId}
                 />
             )}
 
@@ -89,6 +105,7 @@ export default function StepForm({
                     targetUserId={targetUserId}
                     targetUserName={targetUserName}
                     targetGroupId={targetGroupId}
+                    tenantId={tenantId}
                 />
             )}
         </div>

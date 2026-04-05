@@ -8,10 +8,14 @@ const toKatakana = (str: string) => {
 }
 
 import { useEffect, useState } from "react"
-import { supabase } from "../lib/supabase"
 import { buildTenantQueryParam, getTenantContextFromStorage } from "../lib/tenantClient"
 
-export default function CarOption({ setStep, formData, setFormData }: any) {
+export default function CarOption({
+    setStep,
+    formData,
+    setFormData,
+    tenantId: tenantIdProp,
+}: any) {
     // DBから取得した車種マスタ
     const [cars, setCars] = useState<any[]>([])
     // 車種候補（maker + model）
@@ -19,25 +23,49 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
     // メーカー候補
     const [makerSuggestions, setMakerSuggestions] = useState<string[]>([])
     const [optionMenus, setOptionMenus] = useState<Array<{ slug: string; label: string }>>([])
+    const [vehicleColorPlateEnabled, setVehicleColorPlateEnabled] = useState(false)
 
-    // 初回表示時に、carsテーブルから候補データを読み込む。
+    // 車種マスタ（anon 直読みは RLS で空になることがあるため /api/public/car-master 経由）
     useEffect(() => {
         const fetchCars = async () => {
-            const { data } = await supabase.from("cars").select("*")
-            setCars(data || [])
-            const makers = Array.from(new Set((data || []).map(car => car.maker)))
-            setCars(data || [])
+            const fromProp =
+                typeof tenantIdProp === "string" && tenantIdProp.trim().length > 0
+                    ? tenantIdProp.trim()
+                    : null
+            const tenantId = fromProp || getTenantContextFromStorage()?.tenantId || null
+            if (!tenantId) return
+
+            const res = await fetch(`/api/public/car-master?${buildTenantQueryParam(tenantId)}`)
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok) return
+            const data = (Array.isArray(json?.cars) ? json.cars : []) as Array<{
+                maker?: string | null
+                model?: string | null
+                size?: string | null
+            }>
+            setCars(data)
+            const makers = Array.from(
+                new Set(
+                    data
+                        .map((car) => (typeof car.maker === "string" ? car.maker : ""))
+                        .filter((m) => m.length > 0)
+                )
+            )
             setMakerSuggestions(makers)
         }
-        fetchCars()
-
-    }, [])
+        void fetchCars()
+    }, [tenantIdProp])
 
     useEffect(() => {
         const loadOptions = async () => {
-            const tenantCtx = getTenantContextFromStorage()
-            if (!tenantCtx?.tenantId) return
-            const res = await fetch(`/api/public/tenant-config?${buildTenantQueryParam(tenantCtx.tenantId)}`)
+            const fromProp =
+                typeof tenantIdProp === "string" && tenantIdProp.trim().length > 0
+                    ? tenantIdProp.trim()
+                    : null
+            const fromStorage = getTenantContextFromStorage()?.tenantId || null
+            const tenantId = fromProp || fromStorage
+            if (!tenantId) return
+            const res = await fetch(`/api/public/tenant-config?${buildTenantQueryParam(tenantId)}`)
             const json = await res.json().catch(() => ({}))
             if (!res.ok) return
             const options = Array.isArray(json?.menus)
@@ -52,9 +80,10 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
                       .map((m: any) => ({ slug: String(m.slug), label: String(m.label) }))
                 : []
             setOptionMenus(options)
+            setVehicleColorPlateEnabled(json?.features?.vehicle_color_plate === true)
         }
         void loadOptions()
-    }, [])
+    }, [tenantIdProp])
 
     const updateCarAt = (index: number, patch: any) => {
         const nextCars = [...(formData.cars || [])]
@@ -62,6 +91,8 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
         nextCars[index] = {
             ...current,
             selectedAddonSlugs: Array.isArray(current.selectedAddonSlugs) ? current.selectedAddonSlugs : [],
+            vehicleColorAbbr: current.vehicleColorAbbr ?? "",
+            vehiclePlate: current.vehiclePlate ?? "",
             ...patch,
         }
         const anyInterior = nextCars.some((c: any) =>
@@ -76,7 +107,15 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
             ...formData,
             cars: [
                 ...(formData.cars || []),
-                { maker: "", model: "", size: "", isManualCar: false, selectedAddonSlugs: [] },
+                {
+                    maker: "",
+                    model: "",
+                    size: "",
+                    isManualCar: false,
+                    selectedAddonSlugs: [],
+                    vehicleColorAbbr: "",
+                    vehiclePlate: "",
+                },
             ],
         })
     }
@@ -88,7 +127,17 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
             cars:
                 nextCars.length > 0
                     ? nextCars
-                    : [{ maker: "", model: "", size: "", isManualCar: false, selectedAddonSlugs: [] }],
+                    : [
+                          {
+                              maker: "",
+                              model: "",
+                              size: "",
+                              isManualCar: false,
+                              selectedAddonSlugs: [],
+                              vehicleColorAbbr: "",
+                              vehiclePlate: "",
+                          },
+                      ],
         })
     }
 
@@ -144,23 +193,25 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
             selectedAddonSlugs: Array.isArray(formData.cars?.[index]?.selectedAddonSlugs)
                 ? formData.cars[index].selectedAddonSlugs
                 : [],
+            vehicleColorAbbr: formData.cars?.[index]?.vehicleColorAbbr ?? "",
+            vehiclePlate: formData.cars?.[index]?.vehiclePlate ?? "",
         })
         setSuggestions([])
     }
     return (
         <div>
-            <h2 className="mb-4 text-xl font-bold text-slate-900">車両情報</h2>
+            <h2 className="mb-4 text-xl font-bold text-slate-900">お車情報</h2>
             {(formData.cars || []).map((carItem: any, index: number) => (
                 <div key={index} className="mb-3 rounded-xl border border-slate-200 bg-slate-50/40 p-4">
                     <div className="mb-2 flex items-center justify-between">
-                        <p className="font-semibold text-slate-800">車両 {index + 1}</p>
+                        <p className="font-semibold text-slate-800">お車 {index + 1}</p>
                         {(formData.cars || []).length > 1 && (
                             <button
                                 type="button"
                                 onClick={() => removeCar(index)}
                                 className="text-sm font-medium text-red-600 hover:text-red-700"
                             >
-                                この車両を削除
+                                このお車を削除
                             </button>
                         )}
                     </div>
@@ -222,8 +273,26 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
                         <option value="L">L</option>
                     </select>
 
+                    {vehicleColorPlateEnabled && (
+                        <div className="mb-2 space-y-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                            <p className="text-sm font-semibold text-slate-800">お車の色・ナンバー</p>
+                            <input
+                                placeholder="色（略称）"
+                                value={carItem.vehicleColorAbbr ?? ""}
+                                onChange={(e) => updateCarAt(index, { vehicleColorAbbr: e.target.value })}
+                                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm outline-none ring-indigo-100 focus:border-indigo-500 focus:ring-4"
+                            />
+                            <input
+                                placeholder="ナンバー（例: 品川500あ1234）"
+                                value={carItem.vehiclePlate ?? ""}
+                                onChange={(e) => updateCarAt(index, { vehiclePlate: e.target.value })}
+                                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm outline-none ring-indigo-100 focus:border-indigo-500 focus:ring-4"
+                            />
+                        </div>
+                    )}
+
                     <div className="rounded-lg border border-slate-200 bg-white p-3">
-                        <p className="mb-2 text-sm font-semibold text-slate-800">オプション（車両ごと）</p>
+                        <p className="mb-2 text-sm font-semibold text-slate-800">オプション</p>
                         {optionMenus.length === 0 ? (
                             <p className="text-xs text-slate-500">利用可能なオプションはありません</p>
                         ) : (
@@ -263,14 +332,22 @@ export default function CarOption({ setStep, formData, setFormData }: any) {
                     onClick={addCar}
                     className="mb-4 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                 >
-                    + 車両を追加（最大3台）
+                    + お車を追加（最大3台）
                 </button>
             )}
 
             <button
                 onClick={() => setStep(2)}
                 className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={(formData.cars || []).some((c: any) => !c.maker || !c.model || !c.size)}
+                disabled={
+                    (formData.cars || []).some((c: any) => !c.maker || !c.model || !c.size) ||
+                    (vehicleColorPlateEnabled &&
+                        (formData.cars || []).some(
+                            (c: any) =>
+                                !String(c.vehicleColorAbbr ?? "").trim() ||
+                                !String(c.vehiclePlate ?? "").trim()
+                        ))
+                }
             >
                 日時選択へ
             </button>

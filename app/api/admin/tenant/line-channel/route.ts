@@ -157,11 +157,42 @@ export async function PUT(req: NextRequest) {
         patch.line_token_updated_at = new Date().toISOString()
     }
 
-    const { error } = await supabase
+    // (tenant_id, channel_type) の UNIQUE が無い DB でも動かす（マイグレーション未適用対策）
+    const { data: existingUpsertRows, error: selUpsertErr } = await supabase
         .from("tenant_channels")
-        .upsert(patch, { onConflict: "tenant_id,channel_type" })
-    if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("channel_type", "line_liff")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+
+    if (selUpsertErr) {
+        return NextResponse.json({ error: selUpsertErr.message }, { status: 500 })
+    }
+
+    const existingUpsertId = (existingUpsertRows?.[0] as { id?: string } | undefined)?.id
+
+    if (existingUpsertId) {
+        const { error: upErr } = await supabase
+            .from("tenant_channels")
+            .update(patch)
+            .eq("id", existingUpsertId)
+        if (upErr) {
+            return NextResponse.json({ error: upErr.message }, { status: 500 })
+        }
+    } else {
+        const insertPayload: Record<string, unknown> = {
+            ...patch,
+            is_active: patch.is_active !== undefined ? patch.is_active : true,
+            line_push_enabled: patch.line_push_enabled !== undefined ? patch.line_push_enabled : true,
+        }
+        if (insertPayload.liff_id === null || insertPayload.liff_id === undefined) {
+            insertPayload.liff_id = ""
+        }
+        const { error: insErr } = await supabase.from("tenant_channels").insert(insertPayload)
+        if (insErr) {
+            return NextResponse.json({ error: insErr.message }, { status: 500 })
+        }
     }
 
     try {

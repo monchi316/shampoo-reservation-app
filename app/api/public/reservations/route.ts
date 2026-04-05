@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { assertReservationSlotAvailable } from "@/app/lib/serverTenantData"
 import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
 import { ensureTenantExists, normalizeTenantId } from "@/app/lib/serverTenantResolver"
+import { getTenantFeatureMap, isVehicleColorPlateEnabled } from "@/app/lib/tenantFeatures"
 
 const supabase = createClient(
     process.env.SUPABASE_URL!,
@@ -21,6 +22,8 @@ type InsertRow = {
     address: string
     interior: boolean
     addon_slugs?: string[]
+    vehicle_color_abbr?: string
+    vehicle_plate?: string
 }
 
 function isInsertRow(x: unknown): x is InsertRow {
@@ -39,8 +42,58 @@ function isInsertRow(x: unknown): x is InsertRow {
         typeof r.interior === "boolean" &&
         (r.addon_slugs === undefined ||
             (Array.isArray(r.addon_slugs) &&
-                r.addon_slugs.every((x) => typeof x === "string" && x.length > 0)))
+                r.addon_slugs.every((x) => typeof x === "string" && x.length > 0))) &&
+        (r.vehicle_color_abbr === undefined || typeof r.vehicle_color_abbr === "string") &&
+        (r.vehicle_plate === undefined || typeof r.vehicle_plate === "string")
     )
+}
+
+function insertPayloadForTenant(
+    rows: InsertRow[],
+    tenantId: string,
+    vehicleRequired: boolean
+) {
+    return rows.map((r) => ({
+        group_id: r.group_id,
+        user_id: r.user_id,
+        user_name: r.user_name,
+        maker: r.maker,
+        model: r.model,
+        size: r.size,
+        date: r.date,
+        time: r.time,
+        address: r.address,
+        interior: r.interior,
+        addon_slugs: Array.isArray(r.addon_slugs) ? r.addon_slugs : [],
+        tenant_id: tenantId,
+        status: "confirmed" as const,
+        vehicle_color_abbr: vehicleRequired
+            ? String(r.vehicle_color_abbr ?? "").trim() || null
+            : null,
+        vehicle_plate: vehicleRequired ? String(r.vehicle_plate ?? "").trim() || null : null,
+    }))
+}
+
+async function assertVehicleFieldsForInsert(
+    tenantId: string,
+    rows: InsertRow[]
+): Promise<{ ok: true; vehicleRequired: boolean } | { ok: false; message: string }> {
+    const featureMap = await getTenantFeatureMap(supabase, tenantId)
+    const vehicleRequired = isVehicleColorPlateEnabled(featureMap)
+    if (!vehicleRequired) {
+        return { ok: true, vehicleRequired: false }
+    }
+    for (const r of rows) {
+        const abbr = String(r.vehicle_color_abbr ?? "").trim()
+        const plate = String(r.vehicle_plate ?? "").trim()
+        if (!abbr || !plate) {
+            return {
+                ok: false,
+                message: "車の色（略称）とナンバーを各車両分入力してください。",
+            }
+        }
+    }
+    return { ok: true, vehicleRequired: true }
 }
 
 /**
@@ -77,12 +130,12 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: avail.reason }, { status: 409 })
         }
 
-        const payload = rows.map((r) => ({
-            ...r,
-            addon_slugs: Array.isArray(r.addon_slugs) ? r.addon_slugs : [],
-            tenant_id: tenantId,
-            status: "confirmed",
-        }))
+        const vCheck = await assertVehicleFieldsForInsert(tenantId, rows)
+        if (!vCheck.ok) {
+            return NextResponse.json({ error: vCheck.message }, { status: 400 })
+        }
+
+        const payload = insertPayloadForTenant(rows, tenantId, vCheck.vehicleRequired)
 
         const { data, error } = await supabase
             .from("reservations")
@@ -119,6 +172,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: avail.reason }, { status: 409 })
         }
 
+        const vCheck = await assertVehicleFieldsForInsert(tenantId, rows)
+        if (!vCheck.ok) {
+            return NextResponse.json({ error: vCheck.message }, { status: 400 })
+        }
+
         const { error: delErr } = await supabase
             .from("reservations")
             .delete()
@@ -129,12 +187,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: delErr.message }, { status: 500 })
         }
 
-        const payload = rows.map((r) => ({
-            ...r,
-            addon_slugs: Array.isArray(r.addon_slugs) ? r.addon_slugs : [],
-            tenant_id: tenantId,
-            status: "confirmed",
-        }))
+        const payload = insertPayloadForTenant(rows, tenantId, vCheck.vehicleRequired)
 
         const { data, error } = await supabase
             .from("reservations")
@@ -157,7 +210,7 @@ export async function POST(req: NextRequest) {
 
         const { data: current, error: curErr } = await supabase
             .from("reservations")
-            .select("id, date, time")
+            .select("id, date, time, vehicle_color_abbr, vehicle_plate")
             .eq("id", reservationId)
             .eq("tenant_id", tenantId)
             .maybeSingle()
@@ -169,6 +222,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Not found" }, { status: 404 })
         }
 
+        const featureMap = await getTenantFeatureMap(supabase, tenantId)
+        const vehicleRequired = isVehicleColorPlateEnabled(featureMap)
+
         const allowed = new Set([
             "user_name",
             "maker",
@@ -179,6 +235,8 @@ export async function POST(req: NextRequest) {
             "address",
             "interior",
             "addon_slugs",
+            "vehicle_color_abbr",
+            "vehicle_plate",
         ])
         const patch: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(fields)) {
@@ -193,6 +251,35 @@ export async function POST(req: NextRequest) {
                 patch[k] = v
             }
         }
+
+        if (!vehicleRequired) {
+            if ("vehicle_color_abbr" in patch || "vehicle_plate" in patch) {
+                patch.vehicle_color_abbr = null
+                patch.vehicle_plate = null
+            }
+        } else {
+            const mergedAbbr =
+                patch.vehicle_color_abbr !== undefined
+                    ? String(patch.vehicle_color_abbr).trim()
+                    : String((current as { vehicle_color_abbr?: string | null }).vehicle_color_abbr || "").trim()
+            const mergedPlate =
+                patch.vehicle_plate !== undefined
+                    ? String(patch.vehicle_plate).trim()
+                    : String((current as { vehicle_plate?: string | null }).vehicle_plate || "").trim()
+            if (!mergedAbbr || !mergedPlate) {
+                return NextResponse.json(
+                    { error: "車の色（略称）とナンバーの両方を入力してください。" },
+                    { status: 400 }
+                )
+            }
+            if (patch.vehicle_color_abbr !== undefined) {
+                patch.vehicle_color_abbr = mergedAbbr
+            }
+            if (patch.vehicle_plate !== undefined) {
+                patch.vehicle_plate = mergedPlate
+            }
+        }
+
         if (Object.keys(patch).length === 0) {
             return NextResponse.json({ error: "更新できる項目がありません" }, { status: 400 })
         }
