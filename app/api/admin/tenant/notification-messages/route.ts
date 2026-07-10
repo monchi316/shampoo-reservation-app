@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { parseLineAdminNotifyUserIds, validateLineAdminNotifyUserIds } from "@/app/lib/lineAdminNotify"
+import { parseLineAdminNotifyUserIds, validateLineAdminNotifyUserIds } from "@/app/lib/lineAdminNotifyIds"
 import {
     canManageTenantSettings,
     requireAdminSession,

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminTenant } from "../adminTenantContext"
-import { lineAdminNotifyUserIdsToText, parseLineAdminNotifyUserIds } from "@/app/lib/lineAdminNotify"
+import { lineAdminNotifyUserIdsToText, parseLineAdminNotifyUserIds } from "@/app/lib/lineAdminNotifyIds"
 
 function adminTenantQs(tenantId: string | null) {
     if (!tenantId) return ""
