@@ -153,6 +153,12 @@ export function canManageTenantSettings(access: AdminAccess, tenantId: string): 
     return access.role === "owner"
 }
 
+/** LINE チャネル認証情報（LIFF / token 等）。運営スーパー管理者のみ。 */
+export function canConfigureLineChannel(access: AdminAccess, tenantId: string): boolean {
+    if (!canAccessTenant(access, tenantId)) return false
+    return access.role === "superadmin"
+}
+
 /**
  * 一覧系 API 用: クエリの tenantId、またはオペレーターに店舗が1つだけならそれを採用。
  */

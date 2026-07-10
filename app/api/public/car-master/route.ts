@@ -19,15 +19,30 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "tenant が見つかりません" }, { status: 404 })
     }
 
-    const { data, error } = await supabase
-        .from("cars")
-        .select("maker, model, size")
-        .order("maker", { ascending: true })
-        .order("model", { ascending: true })
+    // Supabase/PostgREST の既定上限（例: 1000件）に引っかからないよう全件をページング取得する。
+    const pageSize = 1000
+    let from = 0
+    const allCars: Array<{ maker: string; model: string; size: string }> = []
 
-    if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
+    for (;;) {
+        const to = from + pageSize - 1
+        const { data, error } = await supabase
+            .from("cars")
+            .select("maker, model, size")
+            .order("maker", { ascending: true })
+            .order("model", { ascending: true })
+            .range(from, to)
+
+        if (error) {
+            return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        const rows = (data ?? []) as Array<{ maker: string; model: string; size: string }>
+        allCars.push(...rows)
+
+        if (rows.length < pageSize) break
+        from += pageSize
     }
 
-    return NextResponse.json({ cars: data ?? [] })
+    return NextResponse.json({ cars: allCars })
 }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { parseLineAdminNotifyUserIds, pushLineToTenantAdmins } from "@/app/lib/lineAdminNotify"
 import { lineMessagingPush } from "@/app/lib/linePush"
+import { resolveReservationCancelMessage, type LinePushTemplateVars } from "@/app/lib/lineMessageTemplates"
 import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
 import { ensureTenantExists, normalizeTenantId } from "@/app/lib/serverTenantResolver"
 
@@ -64,6 +66,12 @@ export async function GET(req: NextRequest) {
     const rows = data as CancelRow[]
     const userId = rows[0]?.user_id
     if (userId) {
+        const { data: tenantRow } = await supabase
+            .from("tenants")
+            .select("name, line_message_template_reservation_cancel, line_admin_notify_user_ids")
+            .eq("id", tenantId)
+            .maybeSingle()
+        const adminUserIds = parseLineAdminNotifyUserIds(tenantRow?.line_admin_notify_user_ids)
         const first = rows[0]
         const name = (first.user_name || "").trim() || "お客様"
         const dateStr = first.date ?? ""
@@ -75,21 +83,35 @@ export async function GET(req: NextRequest) {
             )
             .join("\n")
         const addr = (first.address || "").trim() || "—"
-        const msg = `予約のキャンセルが完了しました。
-
-👤 お名前：${name}
-📅 日時：${dateStr} ${timeStr}
-🚙 車種：
-${carBlock}
-📍 住所：${addr}
-
-またのご利用をお待ちしております。`
+        const vars: LinePushTemplateVars = {
+            customer_name: name,
+            tenant_name: String(tenantRow?.name ?? "店舗"),
+            reservation_date: dateStr,
+            reservation_time: timeStr,
+            cars_summary: carBlock,
+            address: addr,
+            edit_url: "",
+            cancel_url: "",
+        }
+        const customTemplate = tenantRow?.line_message_template_reservation_cancel as
+            | string
+            | null
+            | undefined
+        const msg = resolveReservationCancelMessage(customTemplate, vars)
         await lineMessagingPush({
             tenantId,
             toUserId: userId,
             text: msg,
             kind: "cancelled",
             reservationGroupId: groupId || rows[0]?.group_id || rows[0]?.id || null,
+        })
+        await pushLineToTenantAdmins({
+            tenantId,
+            adminUserIds,
+            excludeUserId: userId,
+            kind: "cancelled",
+            reservationGroupId: groupId || rows[0]?.group_id || rows[0]?.id || null,
+            text: msg,
         })
     }
 

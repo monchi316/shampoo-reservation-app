@@ -28,16 +28,10 @@ export async function GET(req: NextRequest) {
         .select("*")
         .eq("tenant_id", TENANT)
         .maybeSingle()
-    const { data: tenantRow } = await supabase
-        .from("tenants")
-        .select("reminder_enabled, reminder_template")
-        .eq("id", TENANT)
-        .maybeSingle()
 
     return NextResponse.json({
         tenantId: TENANT,
         settings: settingsRow,
-        reminder: tenantRow || null,
         weekly: bundle.weekly,
         exceptions: bundle.exceptions,
     })
@@ -67,8 +61,6 @@ export async function PUT(req: NextRequest) {
     const avgTravel = Number(body?.avg_travel_minutes)
     const bookingLeadDays = Number(body?.booking_lead_days ?? 0)
     const bookingLeadHours = Number(body?.booking_lead_hours ?? 0)
-    const reminderEnabled = body?.reminder_enabled
-    const reminderTemplateRaw = body?.reminder_template
     if (!Number.isFinite(avgService) || avgService < 1 || avgService > 1440) {
         return NextResponse.json({ error: "avg_service_minutes_per_car が不正" }, { status: 400 })
     }
@@ -81,20 +73,6 @@ export async function PUT(req: NextRequest) {
     if (!Number.isFinite(bookingLeadHours) || bookingLeadHours < 0 || bookingLeadHours > 23) {
         return NextResponse.json({ error: "booking_lead_hours が不正（0-23）" }, { status: 400 })
     }
-    if (reminderEnabled !== undefined && typeof reminderEnabled !== "boolean") {
-        return NextResponse.json({ error: "reminder_enabled は boolean" }, { status: 400 })
-    }
-    if (
-        reminderTemplateRaw !== undefined &&
-        reminderTemplateRaw !== null &&
-        typeof reminderTemplateRaw !== "string"
-    ) {
-        return NextResponse.json({ error: "reminder_template は文字列" }, { status: 400 })
-    }
-    const reminderTemplate =
-        typeof reminderTemplateRaw === "string"
-            ? reminderTemplateRaw.slice(0, 2000).trim()
-            : null
 
     const uniform_open = body?.uniform_open ?? null
     const uniform_close = body?.uniform_close ?? null
@@ -117,14 +95,6 @@ export async function PUT(req: NextRequest) {
         )
 
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
-
-    if (reminderEnabled !== undefined || reminderTemplateRaw !== undefined) {
-        const tenantPatch: Record<string, unknown> = {}
-        if (reminderEnabled !== undefined) tenantPatch.reminder_enabled = reminderEnabled
-        if (reminderTemplateRaw !== undefined) tenantPatch.reminder_template = reminderTemplate || null
-        const { error: tenantErr } = await supabase.from("tenants").update(tenantPatch).eq("id", TENANT)
-        if (tenantErr) return NextResponse.json({ error: tenantErr.message }, { status: 500 })
-    }
 
     if (Array.isArray(body?.weekly)) {
         await supabase.from("business_hours_weekly").delete().eq("tenant_id", TENANT)
@@ -165,16 +135,10 @@ export async function PUT(req: NextRequest) {
         .select("*")
         .eq("tenant_id", TENANT)
         .maybeSingle()
-    const { data: tenantRow } = await supabase
-        .from("tenants")
-        .select("reminder_enabled, reminder_template")
-        .eq("id", TENANT)
-        .maybeSingle()
 
     return NextResponse.json({
         tenantId: TENANT,
         settings: settingsRow,
-        reminder: tenantRow || null,
         weekly: bundle.weekly,
         exceptions: bundle.exceptions,
     })

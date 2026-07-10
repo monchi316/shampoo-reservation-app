@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { menusToPriceMap, priceForOneCar } from "@/app/lib/menuPricing"
 import { adminVehicleColorPlateLine } from "@/app/lib/vehicleDisplay"
 import { googleMapsNavigationUrl, RESERVATION_STATUS_OPTIONS } from "../../lib/reservationStatus"
+import { maskNameForAdminDemo } from "../../lib/demoDisplayMask"
 import { useAdminTenant } from "../../adminTenantContext"
 
 type Reservation = {
@@ -305,7 +306,9 @@ export default function AdminReservationDetailPage() {
 
                 <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-sm font-medium text-slate-800">お客様</p>
-                    <p className="font-semibold text-slate-900">{base.user_name || "名前未登録"}</p>
+                    <p className="font-semibold text-slate-900">
+                        {maskNameForAdminDemo(adminTenantId, base.user_name)}
+                    </p>
                     <p className="mt-2 text-sm font-medium text-slate-800">日時</p>
                     <p className="font-medium text-slate-900">{base.date} {base.time}</p>
                     <p className="mt-2 text-sm font-medium text-slate-800">住所</p>

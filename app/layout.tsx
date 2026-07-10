@@ -23,8 +23,16 @@ export const metadata: Metadata = {
     default: "洗車予約",
     template: "%s | 洗車予約",
   },
-  description:
-    "お客様向けはLINEのリッチメニューから予約できます。ホーム画面追加は管理画面用です。",
+  description: "予約はLINEリッチメニューをPUSH",
+  openGraph: {
+    title: "洗車予約",
+    description: "予約はLINEリッチメニューをPUSH",
+  },
+  twitter: {
+    card: "summary",
+    title: "洗車予約",
+    description: "予約はLINEリッチメニューをPUSH",
+  },
   appleWebApp: {
     capable: true,
     title: "予約管理",

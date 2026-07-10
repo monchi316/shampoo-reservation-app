@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminTenant } from "../adminTenantContext"
+import { maskNameForAdminDemo } from "../lib/demoDisplayMask"
 
 type DailyRow = {
     date: string
@@ -306,7 +307,7 @@ export default function AdminSalesPage() {
                                     {rows.map((r) => (
                                         <tr key={r.id} className="border-t border-slate-200 bg-white">
                                             <td className={`${tdClass} font-medium`}>{r.service_done_at || "-"}</td>
-                                            <td className={tdClass}>{r.user_name || "-"}</td>
+                                            <td className={tdClass}>{maskNameForAdminDemo(tenantId, r.user_name, "-")}</td>
                                             <td className={`${tdClass} font-medium`}>{r.staff_name || "未設定"}</td>
                                             <td className={tdClass}>
                                                 {r.maker} {r.model}（{r.size}）

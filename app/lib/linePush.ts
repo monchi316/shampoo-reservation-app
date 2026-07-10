@@ -1,12 +1,16 @@
 import { createClient } from "@supabase/supabase-js"
 import { decryptLineCredential } from "@/app/lib/secureLineCredentials"
+import type { LineFlexReservationMessage } from "@/app/lib/lineMessageTemplates"
 
 type LinePushKind = "reservation_created" | "reservation_updated" | "cancelled" | "reminder" | "test"
 
 type LinePushParams = {
     tenantId: string
     toUserId: string
-    text: string
+    /** プレーンテキスト1通（flexMessage 未指定時は必須） */
+    text?: string
+    /** 予約系: 本文にURLを出さずボタンで開く（リンクプレビュー連続表示の回避） */
+    flexMessage?: LineFlexReservationMessage
     kind?: LinePushKind
     reservationGroupId?: string | null
 }
@@ -85,11 +89,13 @@ export async function lineMessagingPush(
     const tenantId = String(params.tenantId || "").trim()
     const toUserId = String(params.toUserId || "").trim()
     const text = String(params.text || "")
+    const flexMessage = params.flexMessage
     const kind = params.kind || "test"
     const reservationGroupId = params.reservationGroupId || null
 
-    if (!tenantId || !toUserId || !text) {
-        const body = { skipped: true, reason: "tenantId/toUserId/text is required" }
+    const hasPayload = Boolean(flexMessage) || text.length > 0
+    if (!tenantId || !toUserId || !hasPayload) {
+        const body = { skipped: true, reason: "tenantId/toUserId/text or flexMessage is required" }
         await logDelivery({
             tenantId: tenantId || "00000000-0000-4000-8000-000000000001",
             kind,
@@ -125,7 +131,7 @@ export async function lineMessagingPush(
         },
         body: JSON.stringify({
             to: toUserId,
-            messages: [{ type: "text", text }],
+            messages: flexMessage ? [flexMessage] : [{ type: "text", text }],
         }),
     })
 

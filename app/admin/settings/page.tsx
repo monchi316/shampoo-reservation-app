@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAdminTenant } from "../adminTenantContext"
+import { lineAdminNotifyUserIdsToText, parseLineAdminNotifyUserIds } from "@/app/lib/lineAdminNotify"
 
 function adminTenantQs(tenantId: string | null) {
     if (!tenantId) return ""
@@ -61,7 +62,7 @@ function sortMenusForDisplay(rows: MenuRow[]): MenuRow[] {
 }
 
 export default function AdminSettingsPage() {
-    const { tenantId, ready, canManageSettings } = useAdminTenant()
+    const { tenantId, ready, canManageSettings, operatorRole } = useAdminTenant()
     const [menus, setMenus] = useState<MenuRow[]>([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -83,15 +84,15 @@ export default function AdminSettingsPage() {
     const [logoUrl, setLogoUrl] = useState<string | null>(null)
     const [logoFile, setLogoFile] = useState<File | null>(null)
     const [uploadingLogo, setUploadingLogo] = useState(false)
-    const [savingLine, setSavingLine] = useState(false)
-    const [lineLiffId, setLineLiffId] = useState("")
-    const [lineChannelId, setLineChannelId] = useState("")
-    const [lineChannelSecret, setLineChannelSecret] = useState("")
-    const [lineChannelAccessToken, setLineChannelAccessToken] = useState("")
-    const [linePushEnabled, setLinePushEnabled] = useState(true)
-    const [lineTokenLast4, setLineTokenLast4] = useState<string | null>(null)
-    const [lineConfigured, setLineConfigured] = useState(false)
-    const [lineEncryptionReady, setLineEncryptionReady] = useState(true)
+    const [savingNotifications, setSavingNotifications] = useState(false)
+    const [notificationFeedback, setNotificationFeedback] = useState<{
+        kind: "ok" | "err"
+        text: string
+    } | null>(null)
+    const [completeLineTemplate, setCompleteLineTemplate] = useState("")
+    const [changeLineTemplate, setChangeLineTemplate] = useState("")
+    const [cancelLineTemplate, setCancelLineTemplate] = useState("")
+    const [adminNotifyLineIdsText, setAdminNotifyLineIdsText] = useState("")
     const [featureVehicleColorPlate, setFeatureVehicleColorPlate] = useState(false)
     const [savingFeatures, setSavingFeatures] = useState(false)
 
@@ -162,13 +163,31 @@ export default function AdminSettingsPage() {
                 )
             )
         }
-        if (json?.reminder) {
-            setReminderEnabled(json.reminder.reminder_enabled !== false)
-            setReminderTemplate(String(json.reminder.reminder_template || ""))
-        } else {
-            setReminderEnabled(true)
-            setReminderTemplate("")
+    }, [tenantId])
+
+    const loadNotificationMessages = useCallback(async () => {
+        if (!tenantId) return
+        const res = await fetch(`/api/admin/tenant/notification-messages${adminTenantQs(tenantId)}`, {
+            credentials: "include",
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+            const errText =
+                typeof json?.error === "string"
+                    ? json.error
+                    : "通知文面の取得に失敗しました（DBに line_message_template_* 列があるか確認してください）"
+            setNotificationFeedback({ kind: "err", text: errText })
+            return
         }
+        setNotificationFeedback((f) => (f?.kind === "err" ? null : f))
+        setReminderEnabled(json.reminder_enabled !== false)
+        setReminderTemplate(String(json.reminder_template || ""))
+        setCompleteLineTemplate(String(json.line_message_template_reservation_complete || ""))
+        setChangeLineTemplate(String(json.line_message_template_reservation_change || ""))
+        setCancelLineTemplate(String(json.line_message_template_reservation_cancel || ""))
+        setAdminNotifyLineIdsText(
+            lineAdminNotifyUserIdsToText(parseLineAdminNotifyUserIds(json.line_admin_notify_user_ids))
+        )
     }, [tenantId])
 
     const loadLogo = useCallback(async () => {
@@ -177,22 +196,6 @@ export default function AdminSettingsPage() {
         const json = await res.json().catch(() => ({}))
         if (!res.ok) return
         setLogoUrl((json?.logoUrl as string | null) || null)
-    }, [tenantId])
-
-    const loadLineChannel = useCallback(async () => {
-        if (!tenantId) return
-        const res = await fetch(`/api/admin/tenant/line-channel${adminTenantQs(tenantId)}`)
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok) return
-        setLineLiffId(String(json?.liff_id || ""))
-        setLineChannelId(String(json?.line_channel_id || ""))
-        setLinePushEnabled(json?.line_push_enabled !== false)
-        setLineTokenLast4((json?.line_token_last4 as string | null) || null)
-        setLineConfigured(!!json?.configured)
-        setLineEncryptionReady(json?.encryption_ready !== false)
-        // セキュリティ上、平文は返さないため入力欄は毎回空にする
-        setLineChannelSecret("")
-        setLineChannelAccessToken("")
     }, [tenantId])
 
     const loadFeatureFlags = useCallback(async () => {
@@ -217,12 +220,12 @@ export default function AdminSettingsPage() {
                 loadMenus(),
                 loadScheduling(),
                 loadLogo(),
-                loadLineChannel(),
+                loadNotificationMessages(),
                 loadFeatureFlags(),
             ])
             setLoading(false)
         })()
-    }, [ready, tenantId, loadMenus, loadScheduling, loadLogo, loadLineChannel, loadFeatureFlags])
+    }, [ready, tenantId, loadMenus, loadScheduling, loadLogo, loadNotificationMessages, loadFeatureFlags])
 
     const uploadLogo = async () => {
         if (!logoFile) return
@@ -318,11 +321,15 @@ export default function AdminSettingsPage() {
     }
 
     const saveScheduling = async () => {
+        if (!tenantId) {
+            setMsg("店舗が選択されていません")
+            return
+        }
         setSaving(true)
         setMsg("")
-        if (!tenantId) return
         const res = await fetch(`/api/admin/tenant/scheduling${adminTenantQs(tenantId)}`, {
             method: "PUT",
+            credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 business_hours_mode: mode,
@@ -332,8 +339,6 @@ export default function AdminSettingsPage() {
                 avg_travel_minutes: avgTravel,
                 booking_lead_days: bookingLeadDays,
                 booking_lead_hours: bookingLeadHours,
-                reminder_enabled: reminderEnabled,
-                reminder_template: reminderTemplate,
                 weekly,
                 exceptions,
             }),
@@ -348,32 +353,48 @@ export default function AdminSettingsPage() {
         loadScheduling()
     }
 
-    const saveLineChannel = async () => {
-        setSavingLine(true)
-        setMsg("")
-        if (!tenantId) return
-        const payload: Record<string, unknown> = {
-            liff_id: lineLiffId,
-            line_channel_id: lineChannelId,
-            line_push_enabled: linePushEnabled,
-            is_active: true,
-        }
-        if (lineChannelSecret.trim()) payload.line_channel_secret = lineChannelSecret.trim()
-        if (lineChannelAccessToken.trim()) payload.line_channel_access_token = lineChannelAccessToken.trim()
-
-        const res = await fetch(`/api/admin/tenant/line-channel${adminTenantQs(tenantId)}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        })
-        const json = await res.json().catch(() => ({}))
-        setSavingLine(false)
-        if (!res.ok) {
-            setMsg(`LINE設定の保存失敗: ${json?.error || ""}`)
+    const saveNotificationMessages = async () => {
+        if (!tenantId) {
+            const t = "店舗が選択されていません"
+            setMsg(t)
+            setNotificationFeedback({ kind: "err", text: t })
             return
         }
-        setMsg("LINE通知設定を保存しました")
-        await loadLineChannel()
+        setSavingNotifications(true)
+        setMsg("")
+        setNotificationFeedback(null)
+        try {
+            const res = await fetch(`/api/admin/tenant/notification-messages${adminTenantQs(tenantId)}`, {
+                method: "PUT",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    reminder_enabled: reminderEnabled,
+                    reminder_template: reminderTemplate,
+                    line_message_template_reservation_complete: completeLineTemplate,
+                    line_message_template_reservation_change: changeLineTemplate,
+                    line_message_template_reservation_cancel: cancelLineTemplate,
+                    line_admin_notify_user_ids: parseLineAdminNotifyUserIds(adminNotifyLineIdsText),
+                }),
+            })
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok) {
+                const detail =
+                    typeof json?.error === "string" && json.error
+                        ? json.error
+                        : `HTTP ${res.status}`
+                const line = `保存に失敗しました: ${detail}`
+                setMsg(line)
+                setNotificationFeedback({ kind: "err", text: line })
+                return
+            }
+            const okLine = "LINE通知の文面を保存しました"
+            setMsg(okLine)
+            setNotificationFeedback({ kind: "ok", text: okLine })
+            await loadNotificationMessages()
+        } finally {
+            setSavingNotifications(false)
+        }
     }
 
     const saveFeatureFlags = async () => {
@@ -437,9 +458,16 @@ export default function AdminSettingsPage() {
             <div className="mx-auto max-w-4xl space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <h1 className="text-2xl font-bold text-slate-900">店舗設定</h1>
-                    <Link href="/admin" className="text-sm font-medium text-indigo-700 hover:underline">
-                        管理トップへ戻る
-                    </Link>
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                        {operatorRole === "superadmin" ? (
+                            <Link href="/admin/line-channel-setup" className="font-medium text-indigo-700 hover:underline">
+                                LINE接続設定（運営）
+                            </Link>
+                        ) : null}
+                        <Link href="/admin" className="font-medium text-indigo-700 hover:underline">
+                            管理トップへ戻る
+                        </Link>
+                    </div>
                 </div>
                 {msg && (
                     <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
@@ -640,85 +668,9 @@ export default function AdminSettingsPage() {
                 </section>
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h2 className="mb-3 text-lg font-semibold text-slate-900">LINE通知設定（企業別）</h2>
-                    <p className="mb-4 text-sm text-slate-600">
-                        この店舗専用のLINEチャネル情報を設定します。トークン/シークレットは暗号化して保存され、画面には再表示されません。
-                    </p>
-                    {!lineEncryptionReady && (
-                        <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                            サーバーの `LINE_CREDENTIALS_ENCRYPTION_KEY` が未設定です（32文字以上）。
-                        </p>
-                    )}
-                    <div className="grid gap-3 md:grid-cols-2">
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">LIFF ID</label>
-                            <input
-                                value={lineLiffId}
-                                onChange={(e) => setLineLiffId(e.target.value)}
-                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
-                                placeholder="200xxxxxxx-xxxxxxx"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">Channel ID</label>
-                            <input
-                                value={lineChannelId}
-                                onChange={(e) => setLineChannelId(e.target.value)}
-                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
-                                placeholder="200xxxxxxxxx"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">
-                                Channel Secret（更新時のみ入力）
-                            </label>
-                            <input
-                                value={lineChannelSecret}
-                                onChange={(e) => setLineChannelSecret(e.target.value)}
-                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
-                                placeholder="入力時のみ上書き保存"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">
-                                Channel Access Token（更新時のみ入力）
-                            </label>
-                            <input
-                                value={lineChannelAccessToken}
-                                onChange={(e) => setLineChannelAccessToken(e.target.value)}
-                                className="mt-0.5 block w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
-                                placeholder="入力時のみ上書き保存"
-                            />
-                        </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
-                        <label className="flex items-center gap-2 text-slate-900">
-                            <input
-                                type="checkbox"
-                                checked={linePushEnabled}
-                                onChange={(e) => setLinePushEnabled(e.target.checked)}
-                            />
-                            LINE Push 通知を有効化
-                        </label>
-                        <span className="text-slate-600">
-                            状態: {lineConfigured ? "設定済み" : "未設定"}
-                            {lineTokenLast4 ? `（token末尾: ****${lineTokenLast4}）` : ""}
-                        </span>
-                    </div>
-                    <button
-                        type="button"
-                        disabled={savingLine}
-                        onClick={saveLineChannel}
-                        className="mt-4 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                        {savingLine ? "保存中…" : "LINE通知設定を保存"}
-                    </button>
-                </section>
-
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                     <h2 className="mb-3 text-lg font-semibold text-slate-900">営業時間・予約枠</h2>
                     <p className="mb-4 text-sm text-slate-600">
-                        基本は「全日程で同じ時間」か「曜日ごと」から選べます。個別の日は下の例外で臨時休業や時間変更に対応します。
+                        基本は「全日程で同じ時間」か「曜日ごと」から選べます。開店・閉店の直後に、特定日の臨時休業・時間変更を設定できます。
                         予約可否は「1台あたり所要時間×台数」と「平均移動時間」で既存予約と重ならないか判定します。
                     </p>
 
@@ -816,78 +768,6 @@ export default function AdminSettingsPage() {
                         </div>
                     )}
 
-                    <div className="mb-4 flex flex-wrap gap-4">
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">1台あたり平均作業時間（分）</label>
-                            <input
-                                type="number"
-                                min={1}
-                                max={1440}
-                                value={avgService}
-                                onChange={(e) => setAvgService(Number(e.target.value))}
-                                className="mt-0.5 block w-32 rounded-lg border border-slate-300 p-2 text-slate-900"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">平均移動時間（分）</label>
-                            <input
-                                type="number"
-                                min={0}
-                                max={480}
-                                value={avgTravel}
-                                onChange={(e) => setAvgTravel(Number(e.target.value))}
-                                className="mt-0.5 block w-32 rounded-lg border border-slate-300 p-2 text-slate-900"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">
-                                予約受付最短リード（日）
-                            </label>
-                            <input
-                                type="number"
-                                min={0}
-                                max={30}
-                                value={bookingLeadDays}
-                                onChange={(e) => setBookingLeadDays(Number(e.target.value))}
-                                className="mt-0.5 block w-24 rounded-lg border border-slate-300 p-2 text-slate-900"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs font-medium text-slate-600">
-                                予約受付最短リード（時）
-                            </label>
-                            <input
-                                type="number"
-                                min={0}
-                                max={23}
-                                value={bookingLeadHours}
-                                onChange={(e) => setBookingLeadHours(Number(e.target.value))}
-                                className="mt-0.5 block w-24 rounded-lg border border-slate-300 p-2 text-slate-900"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-900">
-                            <input
-                                type="checkbox"
-                                checked={reminderEnabled}
-                                onChange={(e) => setReminderEnabled(e.target.checked)}
-                            />
-                            前日リマインダー通知を有効化
-                        </label>
-                        <p className="mb-2 text-xs text-slate-600">
-                            {`{{customer_name}} {{reservation_date}} {{reservation_time}} {{cars_summary}} {{address}} {{tenant_name}} {{edit_url}} {{cancel_url}} を使用可能`}
-                        </p>
-                        <textarea
-                            value={reminderTemplate}
-                            onChange={(e) => setReminderTemplate(e.target.value)}
-                            placeholder="未入力時は標準テンプレートを使用します"
-                            rows={5}
-                            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-900"
-                        />
-                    </div>
-
                     <div className="mb-4">
                         <div className="mb-2 flex items-center justify-between">
                             <p className="text-sm font-semibold text-slate-800">特定日の設定（臨時休業・時間変更）</p>
@@ -969,6 +849,57 @@ export default function AdminSettingsPage() {
                         </div>
                     </div>
 
+                    <div className="mb-4 flex flex-wrap gap-4">
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">1台あたり平均作業時間（分）</label>
+                            <input
+                                type="number"
+                                min={1}
+                                max={1440}
+                                value={avgService}
+                                onChange={(e) => setAvgService(Number(e.target.value))}
+                                className="mt-0.5 block w-32 rounded-lg border border-slate-300 p-2 text-slate-900"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">平均移動時間（分）</label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={480}
+                                value={avgTravel}
+                                onChange={(e) => setAvgTravel(Number(e.target.value))}
+                                className="mt-0.5 block w-32 rounded-lg border border-slate-300 p-2 text-slate-900"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">
+                                予約受付最短リード（日）
+                            </label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={30}
+                                value={bookingLeadDays}
+                                onChange={(e) => setBookingLeadDays(Number(e.target.value))}
+                                className="mt-0.5 block w-24 rounded-lg border border-slate-300 p-2 text-slate-900"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-600">
+                                予約受付最短リード（時）
+                            </label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={23}
+                                value={bookingLeadHours}
+                                onChange={(e) => setBookingLeadHours(Number(e.target.value))}
+                                className="mt-0.5 block w-24 rounded-lg border border-slate-300 p-2 text-slate-900"
+                            />
+                        </div>
+                    </div>
+
                     <button
                         type="button"
                         disabled={saving}
@@ -976,6 +907,113 @@ export default function AdminSettingsPage() {
                         className="rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
                         {saving ? "保存中…" : "営業・予約設定を保存"}
+                    </button>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h2 className="mb-3 text-lg font-semibold text-slate-900">LINE通知の文面</h2>
+                    <div aria-live="polite" className="mb-4 min-h-[1.25rem]">
+                        {notificationFeedback ? (
+                            <p
+                                className={
+                                    notificationFeedback.kind === "ok"
+                                        ? "rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900"
+                                        : "rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-900"
+                                }
+                            >
+                                {savingNotifications && notificationFeedback.kind === "ok"
+                                    ? "保存しました。再読み込み中…"
+                                    : notificationFeedback.text}
+                            </p>
+                        ) : savingNotifications ? (
+                            <p className="text-sm font-medium text-slate-600">保存中です…</p>
+                        ) : null}
+                    </div>
+                    <p className="mb-4 text-sm text-slate-600">
+                        予約完了・変更・キャンセル時のプッシュ、前日リマインドの文章を店舗ごとに変えられます。未入力の項目は標準テンプレートが使われます。管理者通知先を登録すると、お客様と同じ文面が追加送信されます。LIFF
+                        やチャネル認証情報の登録は運営の「LINE接続設定」です。
+                    </p>
+                    <p className="mb-4 text-xs text-slate-500">
+                        プレースホルダ:{" "}
+                        <code className="rounded bg-slate-100 px-1">
+                            {"{{customer_name}} {{tenant_name}} {{reservation_date}} {{reservation_time}} {{cars_summary}} {{address}} {{edit_url}} {{cancel_url}}"}
+                        </code>
+                    </p>
+
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">管理者通知先 LINE ID（複数可）</p>
+                        <p className="mb-2 text-xs text-slate-600">
+                            1行に1件。店舗の公式LINEを友だち追加したアカウントの user ID（U で始まる33文字）を登録してください。予約完了・変更・キャンセル時に、お客様と同じ通知が届きます。
+                        </p>
+                        <textarea
+                            value={adminNotifyLineIdsText}
+                            onChange={(e) => setAdminNotifyLineIdsText(e.target.value)}
+                            placeholder={"Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nUyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"}
+                            rows={4}
+                            spellCheck={false}
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2 font-mono text-sm text-slate-900"
+                        />
+                    </div>
+
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-900">
+                            <input
+                                type="checkbox"
+                                checked={reminderEnabled}
+                                onChange={(e) => setReminderEnabled(e.target.checked)}
+                            />
+                            前日リマインダー通知を有効化
+                        </label>
+                        <p className="mb-2 text-xs text-slate-600">リマインド用テンプレート（空欄なら標準）</p>
+                        <textarea
+                            value={reminderTemplate}
+                            onChange={(e) => setReminderTemplate(e.target.value)}
+                            placeholder="未入力時は標準テンプレートを使用します"
+                            rows={5}
+                            className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-900"
+                        />
+                    </div>
+
+                    <div className="mb-4">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">予約完了時のLINE（プッシュ）</p>
+                        <textarea
+                            value={completeLineTemplate}
+                            onChange={(e) => setCompleteLineTemplate(e.target.value)}
+                            placeholder="未入力時は標準テンプレートを使用します"
+                            rows={6}
+                            className="w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                        />
+                    </div>
+
+                    <div className="mb-4">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">予約変更完了時のLINE（プッシュ）</p>
+                        <textarea
+                            value={changeLineTemplate}
+                            onChange={(e) => setChangeLineTemplate(e.target.value)}
+                            placeholder="未入力時は標準テンプレートを使用します"
+                            rows={6}
+                            className="w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                        />
+                    </div>
+
+                    <div className="mb-4">
+                        <p className="mb-2 text-sm font-semibold text-slate-800">予約キャンセル時のLINE（プッシュ）</p>
+                        <textarea
+                            value={cancelLineTemplate}
+                            onChange={(e) => setCancelLineTemplate(e.target.value)}
+                            placeholder="未入力時は標準テンプレートを使用します"
+                            rows={6}
+                            className="w-full rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                        />
+                    </div>
+
+                    <button
+                        type="button"
+                        disabled={savingNotifications}
+                        onClick={() => void saveNotificationMessages()}
+                        className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                        {savingNotifications ? "保存中…" : "LINE通知の文面を保存"}
                     </button>
                 </section>
             </div>

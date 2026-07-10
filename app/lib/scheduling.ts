@@ -62,10 +62,25 @@ export function clientTimeInputToMinutes(timeStr: string | null | undefined): nu
     return timeStrToMinutes(trimmed)
 }
 
-/** JS と同じ: 0=日 … 6=土 */
+/**
+ * dateStr（YYYY-MM-DD）の曜日を返す。0=日 … 6=土（DB の day_of_week と一致）。
+ * タイムゾーンなしの Date 解析はサーバのローカル（UTC 等）に依存するため、日本の営業日として Asia/Tokyo 基準に固定する。
+ */
 export function dayOfWeekFromDateString(dateStr: string): number {
-    const d = new Date(`${dateStr}T12:00:00`)
-    return d.getDay()
+    const parts = dateStr.split("-").map((x) => Number(x.trim()))
+    if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+        const [y, mo, d] = parts
+        // 12:00 JST は日本に DST が無いため常に同日の UTC 03:00 と対応し、getUTCDay で曜日が一意に決まる。
+        const utcMs = Date.UTC(y, mo - 1, d, 3, 0, 0)
+        if (Number.isFinite(utcMs)) {
+            return new Date(utcMs).getUTCDay()
+        }
+    }
+    const ms = Date.parse(`${dateStr}T12:00:00+09:00`)
+    if (Number.isFinite(ms)) {
+        return new Date(ms).getUTCDay()
+    }
+    return new Date(`${dateStr}T12:00:00`).getDay()
 }
 
 /**

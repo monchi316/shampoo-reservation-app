@@ -7,6 +7,23 @@ const toKatakana = (str: string) => {
     )
 }
 
+const MAX_SUGGESTIONS = 30
+
+const normalizeForSearch = (str: string) => toKatakana(String(str || "").trim().toLowerCase())
+
+/**
+ * 入力との一致スコアを返す（小さいほど優先）。
+ * - 前方一致を最優先
+ * - 部分一致は出現位置が前のものを優先
+ */
+const matchScore = (candidate: string, input: string): number | null => {
+    if (!input) return 0
+    if (candidate.startsWith(input)) return 0
+    const idx = candidate.indexOf(input)
+    if (idx < 0) return null
+    return idx + 10
+}
+
 import { useEffect, useState } from "react"
 import { buildTenantQueryParam, getTenantContextFromStorage } from "../lib/tenantClient"
 
@@ -148,37 +165,72 @@ export default function CarOption({
     const handleMakerChange = (index: number, value: string) => {
         updateCarAt(index, { maker: value, isManualCar: true })
 
-        const inputValue = toKatakana(value.toLowerCase())
-
-        const filtered = cars
-            .map(car => car.maker)
-            .filter((maker, index, self) => self.indexOf(maker) === index) // 重複排除
-            .filter((maker) =>
-                toKatakana(maker.toLowerCase()).includes(inputValue)
+        const inputValue = normalizeForSearch(value)
+        const makers = Array.from(
+            new Set(
+                cars
+                    .map((car) => (typeof car?.maker === "string" ? car.maker : ""))
+                    .filter((maker) => maker.length > 0)
             )
+        )
 
-        setMakerSuggestions(filtered)
+        const ranked = makers
+            .map((maker) => {
+                const score = matchScore(normalizeForSearch(maker), inputValue)
+                return score === null ? null : { maker, score }
+            })
+            .filter((v): v is { maker: string; score: number } => v !== null)
+            .sort((a, b) => {
+                if (a.score !== b.score) return a.score - b.score
+                return a.maker.localeCompare(b.maker, "ja")
+            })
+            .slice(0, MAX_SUGGESTIONS)
+            .map((v) => v.maker)
+
+        setMakerSuggestions(ranked)
     }
 
     const handleModelChange = (index: number, value: string) => {
         // 車種入力時も手入力扱いにする。
         updateCarAt(index, { model: value, isManualCar: true })
 
-        const filtered = cars.filter((car) => {
-            const currentMaker = formData.cars?.[index]?.maker || ""
-            const matchMaker = currentMaker
-                ? car.maker.toLowerCase().includes(currentMaker.toLowerCase())
-                : true
+        const currentMaker = String(formData.cars?.[index]?.maker || "")
+        const currentMakerNorm = normalizeForSearch(currentMaker)
+        const inputValue = normalizeForSearch(value)
 
-            const inputValue = toKatakana(value.toLowerCase())
-            const carModel = toKatakana(car.model.toLowerCase())
+        const ranked = cars
+            .map((car) => {
+                const maker = String(car?.maker || "")
+                const model = String(car?.model || "")
+                const makerNorm = normalizeForSearch(maker)
+                const modelNorm = normalizeForSearch(model)
 
-            const matchModel = carModel.includes(inputValue)
+                // メーカー選択済み時は、前方一致を優先しつつ同一メーカーを強く優先。
+                let makerScore = 0
+                if (currentMakerNorm) {
+                    if (makerNorm === currentMakerNorm) makerScore = 0
+                    else {
+                        const partial = matchScore(makerNorm, currentMakerNorm)
+                        if (partial === null) return null
+                        makerScore = partial + 20
+                    }
+                }
 
-            return matchMaker && matchModel
-        })
+                const modelScore = matchScore(modelNorm, inputValue)
+                if (modelScore === null) return null
 
-        setSuggestions(filtered)
+                return { car, score: makerScore + modelScore }
+            })
+            .filter((v): v is { car: any; score: number } => v !== null)
+            .sort((a, b) => {
+                if (a.score !== b.score) return a.score - b.score
+                if (a.car.maker !== b.car.maker) return String(a.car.maker).localeCompare(String(b.car.maker), "ja")
+                return String(a.car.model).localeCompare(String(b.car.model), "ja")
+            })
+            .slice(0, MAX_SUGGESTIONS)
+            .map((v) => v.car)
+
+        setSuggestions(ranked)
     }
 
     // 候補をクリックしたとき:
@@ -220,11 +272,11 @@ export default function CarOption({
                         placeholder="メーカー"
                         value={carItem.maker}
                         onChange={(e) => handleMakerChange(index, e.target.value)}
-                        className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 outline-none ring-indigo-100 transition focus:border-indigo-500 focus:ring-4"
+                        className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-slate-900 placeholder:text-slate-500 outline-none ring-indigo-100 transition focus:border-indigo-500 focus:ring-4"
                     />
 
                     {makerSuggestions.length > 0 && carItem.maker && (
-                        <ul className="mb-2 rounded-lg border border-slate-200 bg-white p-1">
+                        <ul className="mb-2 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1">
                             {makerSuggestions.map((maker, i) => (
                                 <li
                                     key={`${index}-${i}`}
@@ -232,7 +284,7 @@ export default function CarOption({
                                         updateCarAt(index, { maker, isManualCar: true })
                                         setMakerSuggestions([])
                                     }}
-                                    className="cursor-pointer rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-indigo-50"
+                                    className="cursor-pointer rounded-md px-3 py-2 text-sm text-slate-900 hover:bg-indigo-50"
                                 >
                                     {maker}
                                 </li>
@@ -244,17 +296,17 @@ export default function CarOption({
                         placeholder="車種"
                         value={carItem.model}
                         onChange={(e) => handleModelChange(index, e.target.value)}
-                        className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 outline-none ring-indigo-100 transition focus:border-indigo-500 focus:ring-4"
+                        className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-slate-900 placeholder:text-slate-500 outline-none ring-indigo-100 transition focus:border-indigo-500 focus:ring-4"
                     />
 
                     {/* 車種候補一覧 */}
                     {suggestions.length > 0 && (
-                        <ul className="mb-2 rounded-lg border border-slate-200 bg-white p-1">
+                        <ul className="mb-2 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1">
                             {suggestions.map((car, i) => (
                                 <li
                                     key={`${index}-s-${i}`}
                                     onClick={() => selectCar(index, car)}
-                                    className="cursor-pointer rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-indigo-50"
+                                    className="cursor-pointer rounded-md px-3 py-2 text-sm text-slate-900 hover:bg-indigo-50"
                                 >
                                     {car.maker} {car.model}（{car.size}）
                                 </li>
@@ -265,7 +317,7 @@ export default function CarOption({
                     <select
                         value={carItem.size}
                         onChange={(e) => updateCarAt(index, { size: e.target.value })}
-                        className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 outline-none ring-indigo-100 transition focus:border-indigo-500 focus:ring-4"
+                        className="mb-2 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-slate-900 outline-none ring-indigo-100 transition focus:border-indigo-500 focus:ring-4"
                     >
                         <option value="">サイズ選択</option>
                         <option value="S">S</option>

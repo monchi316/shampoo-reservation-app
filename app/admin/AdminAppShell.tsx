@@ -129,6 +129,14 @@ export default function AdminAppShell({ children }: { children: React.ReactNode 
                                 スタッフ
                             </Link>
                         ) : null}
+                        {operatorRole === "superadmin" ? (
+                            <Link
+                                href="/admin/line-channel-setup"
+                                className="text-sm text-indigo-700 hover:underline"
+                            >
+                                LINE接続
+                            </Link>
+                        ) : null}
                     </div>
                     <button
                         type="button"

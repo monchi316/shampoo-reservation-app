@@ -45,19 +45,30 @@ export default function CalendarSelect({
     )
 
     useEffect(() => {
+        let stale = false
+
         const loadCandidates = async () => {
             setCandidateTimes([])
             setCandidateError(null)
             setCandidateHint(null)
-            if (!formData.date || carsCount < 1) return
+            if (!formData.date || carsCount < 1) {
+                setLoadingCandidates(false)
+                return
+            }
             const tenantCtx = getTenantContextFromStorage()
-            if (!tenantCtx?.tenantId) return
+            if (!tenantCtx?.tenantId) {
+                setLoadingCandidates(false)
+                return
+            }
+
+            const requestDate = formData.date
+            const requestCars = carsCount
 
             setLoadingCandidates(true)
             try {
                 const fetchCandidates = async (numCars: number) => {
                     const sp = new URLSearchParams({
-                        date: formData.date as string,
+                        date: requestDate,
                         numCars: String(numCars),
                         tenantId: tenantCtx.tenantId,
                     })
@@ -66,12 +77,15 @@ export default function CalendarSelect({
                     } else if (mode === "update" && reservationId) {
                         sp.set("excludeReservationIds", String(reservationId))
                     }
-                    const res = await fetch(`/api/public/availability-check?${sp.toString()}`)
+                    const res = await fetch(`/api/public/availability-check?${sp.toString()}`, {
+                        credentials: "include",
+                    })
                     const json = await res.json().catch(() => ({}))
                     return { res, json }
                 }
 
-                const { res, json } = await fetchCandidates(carsCount)
+                const { res, json } = await fetchCandidates(requestCars)
+                if (stale) return
                 if (!res.ok) {
                     setCandidateError(json?.error || "空き時間候補の取得に失敗しました。")
                     return
@@ -88,15 +102,17 @@ export default function CalendarSelect({
                         json?.reason || "予約枠に空きがありません。別日または台数の調整をご検討ください。"
                     )
                     let reducedHint: string | null = null
-                    if (carsCount > 1) {
-                        for (let n = carsCount - 1; n >= 1; n--) {
+                    if (requestCars > 1) {
+                        for (let n = requestCars - 1; n >= 1; n--) {
+                            if (stale) return
                             const reduced = await fetchCandidates(n)
+                            if (stale) return
                             if (reduced.res.ok && reduced.json?.ok) {
                                 const reducedTimes = Array.isArray(reduced.json?.times)
                                     ? reduced.json.times
                                     : []
                                 if (reducedTimes.length > 0) {
-                                    reducedHint = `${carsCount}台では空きがありません。${n}台なら予約可能です（例: ${reducedTimes
+                                    reducedHint = `${requestCars}台では空きがありません。${n}台なら予約可能です（例: ${reducedTimes
                                         .slice(0, 3)
                                         .join(" / ")}）。`
                                     break
@@ -117,17 +133,22 @@ export default function CalendarSelect({
                             typeof json?.earliestStartTime === "string" &&
                             json.earliestStartTime
                         ) {
-                            reducedHint = `最短は ${formData.date} ${json.earliestStartTime} からです。`
+                            reducedHint = `最短は ${requestDate} ${json.earliestStartTime} からです。`
                         }
                     }
-                    if (reducedHint) setCandidateHint(reducedHint)
+                    if (reducedHint && !stale) setCandidateHint(reducedHint)
                 }
             } finally {
-                setLoadingCandidates(false)
+                if (!stale) {
+                    setLoadingCandidates(false)
+                }
             }
         }
 
         void loadCandidates()
+        return () => {
+            stale = true
+        }
     }, [formData.date, carsCount, mode, excludeGroupId, reservationId])
 
     const goNext = async () => {

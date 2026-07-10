@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import {
-    canManageTenantSettings,
+    canConfigureLineChannel,
     requireAdminSession,
     resolveAdminListTenantId,
 } from "@/app/lib/serverAdminAuth"
@@ -49,8 +49,8 @@ export async function GET(req: NextRequest) {
     if (!resolved.ok) return resolved.response
     const tenantId = resolved.tenantId
 
-    if (!canManageTenantSettings(auth.access, tenantId)) {
-        return NextResponse.json({ error: "LINE設定を閲覧する権限がありません" }, { status: 403 })
+    if (!canConfigureLineChannel(auth.access, tenantId)) {
+        return NextResponse.json({ error: "LINE接続設定は運営（スーパー管理者）のみ閲覧できます" }, { status: 403 })
     }
 
     try {
@@ -97,8 +97,8 @@ export async function PUT(req: NextRequest) {
     if (!resolved.ok) return resolved.response
     const tenantId = resolved.tenantId
 
-    if (!canManageTenantSettings(auth.access, tenantId)) {
-        return NextResponse.json({ error: "LINE設定を変更する権限がありません" }, { status: 403 })
+    if (!canConfigureLineChannel(auth.access, tenantId)) {
+        return NextResponse.json({ error: "LINE接続設定は運営（スーパー管理者）のみ変更できます" }, { status: 403 })
     }
 
     const body = await req.json().catch(() => ({}))

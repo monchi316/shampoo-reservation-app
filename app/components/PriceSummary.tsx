@@ -357,6 +357,10 @@ export default function PriceSummary({
 
         // Send LINE push through server API route.
 
+        const carsSummary = cars
+            .map((car: any, i: number) => `${i + 1}. ${car.maker} ${car.model}（${car.size}）`)
+            .join("\n")
+
         const res = await fetch("/api/send-line", {
             method: "POST",
             headers: {
@@ -367,36 +371,18 @@ export default function PriceSummary({
                 userId: lineUserId,
                 kind: mode === "update" ? "reservation_updated" : "reservation_created",
                 reservationGroupId: currentGroupId || null,
-                message:
-                    mode === "update"
-                        ? `予約内容を変更しました🛠️
-
-👤 お名前：${lineUserName}
-📅 日時：${formData.date} ${formData.time}
-🚙 車種：
-${cars.map((car: any, i: number) => `${i + 1}. ${car.maker} ${car.model}（${car.size}）`).join("\n")}
-📍 住所：${formData.address}
-
-変更はこちら👇
-${editUrl}
-
-キャンセルはこちら👇
-${cancelUrl}
-`
-                        : `予約完了🚗✨
-
-👤 お名前：${lineUserName}
-📅 日時：${formData.date} ${formData.time}
-🚙 車種：
-${cars.map((car: any, i: number) => `${i + 1}. ${car.maker} ${car.model}（${car.size}）`).join("\n")}
-📍 住所：${formData.address}
-
-変更はこちら👇
-${editUrl}
-
-キャンセルはこちら👇
-${cancelUrl}
-`,
+                messageTemplate: {
+                    type: mode === "update" ? "reservation_updated" : "reservation_created",
+                    vars: {
+                        customer_name: lineUserName,
+                        reservation_date: formData.date,
+                        reservation_time: formData.time,
+                        cars_summary: carsSummary,
+                        address: formData.address,
+                        edit_url: editUrl,
+                        cancel_url: cancelUrl,
+                    },
+                },
             }),
         })
 

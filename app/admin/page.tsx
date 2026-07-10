@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useAdminTenant } from "./adminTenantContext"
 
 export default function AdminHomePage() {
-    const { ready, canManageSettings } = useAdminTenant()
+    const { ready, canManageSettings, operatorRole } = useAdminTenant()
 
     if (!ready) {
         return (
@@ -63,6 +63,17 @@ export default function AdminHomePage() {
                                     スタッフアカウントの追加（予約管理のみ操作可）
                                 </p>
                             </Link>
+                            {operatorRole === "superadmin" ? (
+                                <Link
+                                    href="/admin/line-channel-setup"
+                                    className="rounded-xl border border-slate-200 bg-white p-4 transition hover:bg-slate-50 sm:col-span-2"
+                                >
+                                    <p className="font-semibold text-slate-900">LINE接続設定（運営）</p>
+                                    <p className="text-sm text-slate-600">
+                                        LIFF・Messaging API（チャネル ID / トークン等）
+                                    </p>
+                                </Link>
+                            ) : null}
                         </>
                     ) : null}
                 </div>

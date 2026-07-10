@@ -24,3 +24,65 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* LP ヒーロー見出し（/lp） */
+@keyframes lp-tagline-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes lp-tagline-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes lp-tagline-line-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.lp-hero-tagline__text--fade {
+  opacity: 0;
+  animation: lp-tagline-fade-up 0.88s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.lp-hero-tagline__text--slide {
+  opacity: 0;
+  animation: lp-tagline-slide-in 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.lp-hero-tagline__line {
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: lp-tagline-line-grow 0.78s cubic-bezier(0.22, 1, 0.36, 1) 0.62s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero-tagline__text--fade,
+  .lp-hero-tagline__text--slide {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .lp-hero-tagline__line {
+    animation: none;
+    transform: scaleX(1);
+  }
+}

@@ -402,7 +402,7 @@ export default function ReservePage() {
                 <div className="mx-auto mb-4 max-w-2xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                     <p className="font-semibold">LINE ユーザー ID を取得する LIFF ID が未設定です</p>
                     <p className="mt-1 text-amber-900/90">
-                        管理画面の LINE 設定で <code className="rounded bg-amber-100/80 px-1">tenant_channels</code>{' '}
+                        運営の LINE 接続設定で <code className="rounded bg-amber-100/80 px-1">tenant_channels</code>{' '}
                         に <code className="rounded bg-amber-100/80 px-1">line_liff</code> の{' '}
                         <code className="rounded bg-amber-100/80 px-1">liff_id</code>{' '}
                         が保存されているか、再デプロイ後に反映されているか確認してください。

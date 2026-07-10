@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { lineMessagingPush } from "@/app/lib/linePush"
+import {
+    buildReservationFlexMessage,
+    resolveReminderMessage,
+    stripActionUrlsFromLineBody,
+    type LinePushTemplateVars,
+} from "@/app/lib/lineMessageTemplates"
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 const TZ = "Asia/Tokyo"
@@ -47,57 +53,6 @@ function getBearer(req: NextRequest): string {
 function isBlockedOrUnreachable(status: number): boolean {
     // LINEでブロック・友だち解除・ID無効など再送しても改善しないケース
     return status === 400 || status === 403 || status === 404
-}
-
-function buildDefaultReminderMessage(params: {
-    customerName: string
-    tenantName: string
-    reservationDate: string
-    reservationTime: string
-    carsSummary: string
-    address: string
-    editUrl: string
-    cancelUrl: string
-}): string {
-    const p = params
-    return `【前日リマインド】明日のご予約です🚗
-
-👤 お名前：${p.customerName}
-🏪 店舗：${p.tenantName}
-📅 日時：${p.reservationDate} ${p.reservationTime}
-🚙 車種：
-${p.carsSummary}
-📍 住所：${p.address}
-
-変更はこちら👇
-${p.editUrl}
-
-キャンセルはこちら👇
-${p.cancelUrl}`
-}
-
-function applyTemplate(
-    template: string,
-    params: {
-        customerName: string
-        tenantName: string
-        reservationDate: string
-        reservationTime: string
-        carsSummary: string
-        address: string
-        editUrl: string
-        cancelUrl: string
-    }
-): string {
-    return template
-        .replaceAll("{{customer_name}}", params.customerName)
-        .replaceAll("{{tenant_name}}", params.tenantName)
-        .replaceAll("{{reservation_date}}", params.reservationDate)
-        .replaceAll("{{reservation_time}}", params.reservationTime)
-        .replaceAll("{{cars_summary}}", params.carsSummary)
-        .replaceAll("{{address}}", params.address)
-        .replaceAll("{{edit_url}}", params.editUrl)
-        .replaceAll("{{cancel_url}}", params.cancelUrl)
 }
 
 export async function GET(req: NextRequest) {
@@ -167,36 +122,36 @@ export async function GET(req: NextRequest) {
         const customerName = first.user_name || "お客様"
         const tenantName = tenant?.name || "店舗"
 
-        const template = (tenant?.reminder_template || "").trim()
-        const message =
-            template.length > 0
-                ? applyTemplate(template, {
-                      customerName,
-                      tenantName,
-                      reservationDate: first.date,
-                      reservationTime: String(first.time || "").slice(0, 5),
-                      carsSummary,
-                      address: first.address || "",
+        const vars: LinePushTemplateVars = {
+            customer_name: customerName,
+            tenant_name: tenantName,
+            reservation_date: first.date,
+            reservation_time: String(first.time || "").slice(0, 5),
+            cars_summary: carsSummary,
+            address: first.address || "",
+            edit_url: editUrl,
+            cancel_url: cancelUrl,
+        }
+        const message = resolveReminderMessage(tenant?.reminder_template, vars)
+
+        const useFlex =
+            editUrl.startsWith("https://") && cancelUrl.startsWith("https://")
+        const pushPayload = useFlex
+            ? {
+                  flexMessage: buildReservationFlexMessage({
+                      bodyText: stripActionUrlsFromLineBody(message, editUrl, cancelUrl),
                       editUrl,
                       cancelUrl,
-                  })
-                : buildDefaultReminderMessage({
-                      customerName,
-                      tenantName,
-                      reservationDate: first.date,
-                      reservationTime: String(first.time || "").slice(0, 5),
-                      carsSummary,
-                      address: first.address || "",
-                      editUrl,
-                      cancelUrl,
-                  })
+                  }),
+              }
+            : { text: message }
 
         const { ok, status, lineBody } = await lineMessagingPush({
             tenantId: first.tenant_id,
             toUserId: first.user_id,
-            text: message,
             kind: "reminder",
             reservationGroupId: first.group_id || first.id,
+            ...pushPayload,
         })
         const ids = rowsInGroup.map((r) => r.id)
         const errText = ok ? null : `status=${status} body=${JSON.stringify(lineBody)}`

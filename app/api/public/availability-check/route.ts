@@ -4,6 +4,13 @@ import { assertReservationSlotAvailable, listAvailableStartTimes } from "@/app/l
 import { DEFAULT_TENANT_ID } from "@/app/lib/tenant"
 import { ensureTenantExists, normalizeTenantId } from "@/app/lib/serverTenantResolver"
 
+/** YYYY-M-D 等を YYYY-MM-DD に揃え、営業日・曜日判定のブレを防ぐ */
+function normalizeCalendarDateInput(raw: string): string {
+    const m = String(raw || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (!m) return String(raw || "").trim()
+    return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`
+}
+
 const supabase = createClient(
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -11,7 +18,7 @@ const supabase = createClient(
 
 export async function GET(req: NextRequest) {
     const sp = req.nextUrl.searchParams
-    const dateStr = sp.get("date") || ""
+    const dateStr = normalizeCalendarDateInput(sp.get("date") || "")
     const numCars = Number(sp.get("numCars"))
     const tenantId = normalizeTenantId(sp.get("tenantId")) || DEFAULT_TENANT_ID
     const excludeGroupId = sp.get("excludeGroupId")
@@ -41,7 +48,8 @@ export async function GET(req: NextRequest) {
 /** 予約前チェック: 営業時間・既存予約・移動バッファ */
 export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
-    const dateStr = body?.date as string | undefined
+    const dateStr =
+        typeof body?.date === "string" ? normalizeCalendarDateInput(body.date) : undefined
     const timeStr = body?.time as string | undefined
     const numCars = Number(body?.numCars)
     const tenantId = normalizeTenantId(body?.tenantId) || DEFAULT_TENANT_ID
