@@ -10,7 +10,7 @@ const PRODUCT_TAGLINE = "予約から売上確認まで、ひとつの流れで�
 const OFFICIAL_LINE_URL = "https://lin.ee/VrpAi5U"
 
 export const metadata: Metadata = {
-    title: `${PRODUCT_LABEL} | SUKIMA Lab.`,
+    title: `${PRODUCT_LABEL} | SUKIMA.Lab`,
     description:
         "出張洗車（モバイル洗車）事業向け。LINEでの予約受付と管理画面での予約・売上オペレーションをつなぎ、現場の手間をそっと減らします。",
 }
@@ -63,13 +63,13 @@ export default function LandingPage() {
                 <div className="mx-auto flex max-w-6xl items-center gap-5 px-6 py-6 md:gap-6 md:py-7">
                     <Image
                         src="/lp/logo.png"
-                        alt="SUKIMA Lab."
+                        alt="SUKIMA.Lab"
                         width={72}
                         height={72}
                         className="shrink-0 rounded-2xl border border-neutral-200 shadow-sm"
                     />
                     <div className="min-w-0 leading-tight">
-                        <p className="text-xs font-medium tracking-wide text-neutral-500 md:text-sm">SUKIMA Lab.</p>
+                        <p className="text-xs font-medium tracking-wide text-neutral-500 md:text-sm">SUKIMA.Lab</p>
                         <p className="mt-1 text-lg font-semibold tracking-tight text-neutral-900 sm:text-xl md:text-2xl">
                             {PRODUCT_LABEL}
                         </p>
@@ -149,7 +149,7 @@ export default function LandingPage() {
                             href="/lab"
                             className="mt-6 inline-flex items-center justify-center rounded-lg border border-neutral-400 bg-white px-5 py-2.5 text-sm font-semibold text-neutral-800 shadow-sm transition hover:border-neutral-500 hover:bg-neutral-50"
                         >
-                            SUKIMA Lab. のコンセプトを見る
+                            SUKIMA.Lab のコンセプトを見る
                         </Link>
                     </div>
                 </div>
@@ -271,9 +271,9 @@ export default function LandingPage() {
             <footer className="border-t border-neutral-200 bg-neutral-50 py-10">
                 <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-6 text-center sm:flex-row sm:justify-between sm:text-left">
                     <div className="flex items-center gap-3">
-                        <Image src="/lp/logo.png" alt="SUKIMA Lab." width={32} height={32} className="rounded-md opacity-90" />
+                        <Image src="/lp/logo.png" alt="SUKIMA.Lab" width={32} height={32} className="rounded-md opacity-90" />
                         <div>
-                            <p className="text-sm font-semibold text-neutral-800">SUKIMA Lab.</p>
+                            <p className="text-sm font-semibold text-neutral-800">SUKIMA.Lab</p>
                             <p className="text-xs text-neutral-500">{PRODUCT_LABEL}</p>
                         </div>
                     </div>

@@ -3,9 +3,9 @@ import Image from "next/image"
 import Link from "next/link"
 
 export const metadata: Metadata = {
-    title: "コンセプト | SUKIMA Lab.",
+    title: "コンセプト | SUKIMA.Lab",
     description:
-        "日常や業務の小さな引っかかりに目を向け、必要なところにだけそっと手を添える。SUKIMA Lab. の考え方をご紹介します。",
+        "日常や業務の小さな引っかかりに目を向け、必要なところにだけそっと手を添える。SUKIMA.Lab の考え方をご紹介します。",
 }
 
 export default function LabConceptPage() {
@@ -16,13 +16,13 @@ export default function LabConceptPage() {
                     <Link href="/lp" className="flex items-center gap-3 transition hover:opacity-80">
                         <Image
                             src="/lp/logo.png"
-                            alt="SUKIMA Lab."
+                            alt="SUKIMA.Lab"
                             width={36}
                             height={36}
                             className="rounded-lg border border-neutral-200"
                         />
                         <div className="leading-tight">
-                            <p className="text-[11px] font-medium tracking-wide text-neutral-500">SUKIMA Lab.</p>
+                            <p className="text-[11px] font-medium tracking-wide text-neutral-500">SUKIMA.Lab</p>
                             <p className="text-sm font-semibold text-neutral-800">コンセプト</p>
                         </div>
                     </Link>
@@ -40,7 +40,7 @@ export default function LabConceptPage() {
                     小さな違和感を、静かに解決する。
                 </h1>
                 <p className="mt-6 text-sm leading-relaxed text-neutral-600 md:text-[15px]">
-                    SUKIMA Lab. は、日常や業務のなかにある「ちょっと不便」「少し面倒」「なんとなく気になる」——そんな
+                    SUKIMA.Lab は、日常や業務のなかにある「ちょっと不便」「少し面倒」「なんとなく気になる」——そんな
                     <span className="whitespace-nowrap">小さな引っかかり＝スキマ</span>
                     に目を向ける研究所です。
                 </p>
@@ -75,7 +75,7 @@ export default function LabConceptPage() {
 
             <footer className="border-t border-neutral-200 bg-white py-8">
                 <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 px-6 text-center sm:flex-row sm:justify-between sm:text-left">
-                    <p className="text-xs text-neutral-500">© SUKIMA Lab.</p>
+                    <p className="text-xs text-neutral-500">© SUKIMA.Lab</p>
                     <Link href="/lp" className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline">
                         モバイル洗車向けプラットフォームの紹介へ
                     </Link>
