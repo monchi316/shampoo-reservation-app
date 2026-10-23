@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Image from 'next/image'
 import StepForm from '../components/StepForm'
 import LiffInit, { type LiffInitStatus } from '../components/LiffInit'
 import TenantLogo from '../components/TenantLogo'
@@ -164,6 +165,7 @@ export default function ReservePage() {
         otherAddress: '',
     })
     const [tenantCtx, setTenantCtx] = useState<TenantContext | null>(null)
+    const [showPortfolioLogo, setShowPortfolioLogo] = useState(false)
     const [tenantLoading, setTenantLoading] = useState(true)
     const [tenantError, setTenantError] = useState<string | null>(null)
     const [liffStatus, setLiffStatus] = useState<LiffInitStatus>({ state: 'idle' })
@@ -197,6 +199,12 @@ export default function ReservePage() {
                     resolveTenantContextFromUrl()
                 const rawSp = new URLSearchParams(window.location.search)
                 const hasExplicitTenantInUrl = !!(rawSp.get('tenantId') || rawSp.get('lid'))
+                // 公開デモの店舗指定なし入口は表示ロゴだけを差し替える。
+                // 店舗の解決・予約の保存先・LINE連携は既存の処理を使う。
+                setShowPortfolioLogo(
+                    window.location.hostname === 'shampoo-reservation-app.vercel.app' &&
+                        !hasExplicitTenantInUrl
+                )
                 const tenantIdHint = hasExplicitTenantInUrl
                     ? urlTenantIdHint
                     : (fromStorage?.tenantId || urlTenantIdHint)
@@ -424,7 +432,17 @@ export default function ReservePage() {
 
             <div className="mx-auto w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="mb-6 flex items-start gap-4">
-                    <TenantLogo className="h-14 w-14 shrink-0" />
+                    {showPortfolioLogo ? (
+                        <Image
+                            src="/lp/logo.png"
+                            alt="SUKIMA.Lab"
+                            width={56}
+                            height={56}
+                            className="h-14 w-14 shrink-0 object-contain"
+                        />
+                    ) : (
+                        <TenantLogo className="h-14 w-14 shrink-0" />
+                    )}
                     <div>
                         <h1 className="mb-2 text-2xl font-bold tracking-tight text-slate-900">
                             洗車予約フォーム
