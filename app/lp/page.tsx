@@ -8,6 +8,8 @@ import { ScrollToDemoCtaButton } from "./ScrollToDemoCtaButton"
 const PRODUCT_LABEL = "モバイル洗車向け 予約・売上プラットフォーム"
 const PRODUCT_TAGLINE = "予約から売上確認まで、ひとつの流れで。"
 const OFFICIAL_LINE_URL = "https://lin.ee/VrpAi5U"
+// リッチメニューと同じ LIFF 入口を使い、デモ店舗の設定で予約フォームを開く。
+const DEMO_RESERVATION_URL = "https://liff.line.me/2009544299-YkEw0duU"
 
 export const metadata: Metadata = {
     title: `${PRODUCT_LABEL} | SUKIMA.Lab`,
@@ -86,12 +88,12 @@ export default function LandingPage() {
                         出張洗車（モバイル洗車）の現場で、確認と連絡の手間をひとつずつ減らすための仕組みです。
                     </p>
                     <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <Link
-                            href="/reserve"
+                        <a
+                            href={DEMO_RESERVATION_URL}
                             className="inline-flex justify-center rounded-lg bg-neutral-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800"
                         >
                             予約フォームを試す
-                        </Link>
+                        </a>
                         <ScrollToDemoCtaButton
                             targetId="lp-demo-cta"
                             className="inline-flex justify-center rounded-lg border border-neutral-300 bg-white px-6 py-3 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-50"
@@ -241,12 +243,12 @@ export default function LandingPage() {
                             </p>
                         </div>
                         <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                            <Link
-                                href="/reserve"
+                            <a
+                                href={DEMO_RESERVATION_URL}
                                 className="inline-flex justify-center rounded-lg bg-neutral-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800"
                             >
                                 予約デモへ
-                            </Link>
+                            </a>
                             <Link
                                 href="/admin/login"
                                 className="inline-flex justify-center rounded-lg bg-neutral-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800"
